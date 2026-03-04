@@ -688,10 +688,13 @@
 
     _copyAllSelectors() {
       const self = this
-      const text = this._selectedElements.map((el) => {
+      const currentUrl = window.location.href
+      const elementsText = this._selectedElements.map((el) => {
         const label = '元素 ' + el.id  // 使用固定 ID
         return label + ': ' + el.selector + '\n描述: ' + el.description
       }).join('\n\n')
+
+      const text = '页面URL: ' + currentUrl + '\n\n' + elementsText
 
       navigator.clipboard.writeText(text).then(() => {
         self._showCopyFeedback('已复制所有选择器！')

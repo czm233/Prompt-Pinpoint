@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ElementSelector</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="header">
+      <span class="logo">🎯</span>
+      <h1 class="title">ElementSelector</h1>
+    </header>
+
+    <main class="main">
+      <div class="status-bar">
+        <span class="status-label">状态：</span>
+        <span id="status-text" class="status-text">未启动</span>
+      </div>
+
+      <div class="selected-info">
+        <span class="info-label">已选中：</span>
+        <span id="selected-count" class="info-value">0 个元素</span>
+      </div>
+
+      <button id="toggle-btn" class="toggle-btn">
+        <span class="btn-icon">▶</span>
+        <span class="btn-text">启动选择器</span>
+      </button>
+
+      <div class="shortcuts">
+        <div class="shortcut-title">快捷键</div>
+        <div class="shortcut-item">
+          <kbd>Alt</kbd> + <kbd>S</kbd>
+          <span class="shortcut-desc">开启/关闭</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>ESC</kbd>
+          <span class="shortcut-desc">关闭选择器</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <a href="https://github.com" target="_blank" class="footer-link">
+        使用说明
+      </a>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -73,28 +73,159 @@
   }
 
   /**
-   * 获取元素的文本内容（截取前20字符）
+   * 获取元素的文本内容（截取前50字符）
    */
   function getTextContent(element) {
     const text = element.textContent ? element.textContent.trim() : ''
-    return text.length > 20 ? text.substring(0, 20) + '...' : text
+    return text.length > 50 ? text.substring(0, 50) + '...' : text
   }
 
   /**
-   * 生成元素描述
+   * 收集元素的完整信息，返回结构化对象
    */
-  function generateDescription(element) {
+  function collectElementInfo(element) {
+    const info = {}
     const tagName = element.tagName.toLowerCase()
-    const className = element.className && typeof element.className === 'string'
-      ? element.className.trim().split(/\s+/)[0]
-      : ''
-    const text = getTextContent(element)
+    info.tagName = tagName
+    info.selector = generateSelector(element)
 
-    let desc = '<' + tagName + '>'
-    if (className) desc += ' .' + className
-    if (text) desc += ' "' + text + '"'
+    // 语义属性
+    const attrConfig = [
+      ['type', ['input', 'button']],
+      ['placeholder', ['input', 'textarea']],
+      ['name', ['input', 'select', 'textarea', 'button']],
+      ['href', ['a']],
+      ['src', ['img', 'video', 'audio', 'iframe']],
+      ['alt', ['img']],
+      ['role', null],
+      ['aria-label', null],
+      ['for', ['label']],
+      ['action', ['form']],
+      ['method', ['form']],
+      ['data-testid', null]
+    ]
+    const attrs = []
+    for (const [attr, tags] of attrConfig) {
+      if (tags === null || tags.includes(tagName)) {
+        const val = element.getAttribute(attr)
+        if (val !== null && val !== '') {
+          attrs.push(attr + '=' + val)
+        }
+      }
+    }
+    if (['input', 'select', 'textarea'].includes(tagName) && element.value) {
+      attrs.push('value=' + element.value)
+    }
+    info.attrs = attrs
 
-    return desc
+    // 状态信息
+    const states = []
+    if (element.disabled) states.push('disabled')
+    if (element.checked) states.push('checked')
+    if (element.readOnly) states.push('readOnly')
+    if (element.required) states.push('required')
+    if (element.hidden) states.push('hidden')
+    info.states = states
+
+    // 文本内容
+    info.text = getTextContent(element)
+
+    // 关联标签（仅表单元素）
+    if (['input', 'select', 'textarea'].includes(tagName)) {
+      let labelText = ''
+      if (element.id) {
+        const label = document.querySelector('label[for="' + element.id + '"]')
+        if (label) labelText = label.textContent.trim()
+      }
+      if (!labelText) {
+        const parentLabel = element.closest('label')
+        if (parentLabel) {
+          const clone = parentLabel.cloneNode(true)
+          clone.querySelectorAll('input, select, textarea').forEach(i => i.remove())
+          labelText = clone.textContent.trim()
+        }
+      }
+      if (labelText) {
+        info.label = labelText.length > 50 ? labelText.substring(0, 50) + '...' : labelText
+      }
+    }
+
+    // 尺寸与位置
+    const rect = element.getBoundingClientRect()
+    info.size = Math.round(rect.width) + 'x' + Math.round(rect.height)
+
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    const posY = centerY < vh / 3 ? '顶部' : centerY < vh * 2 / 3 ? '中部' : '底部'
+    const posX = centerX < vw / 3 ? '偏左' : centerX < vw * 2 / 3 ? '居中' : '偏右'
+    info.position = '页面' + posY + posX
+
+    // 层级上下文（最近的语义化祖先）
+    const semanticTags = ['form', 'nav', 'header', 'footer', 'main', 'aside', 'section', 'article', 'dialog']
+    let parent = element.parentElement
+    while (parent && parent !== document.body) {
+      const parentTag = parent.tagName.toLowerCase()
+      if (semanticTags.includes(parentTag) || parent.getAttribute('role')) {
+        let ctx = '<' + parentTag
+        if (parent.id) {
+          ctx += '#' + parent.id
+        } else if (parent.className && typeof parent.className === 'string') {
+          const cls = parent.className.trim().split(/\s+/)[0]
+          if (cls) ctx += '.' + cls
+        }
+        ctx += '>'
+        info.context = ctx + ' 内'
+        break
+      }
+      parent = parent.parentElement
+    }
+
+    return info
+  }
+
+  /**
+   * 将结构化信息格式化为文本
+   */
+  function formatElementInfo(info, id) {
+    const lines = []
+
+    // 标题行
+    let title = '[元素 ' + id + '] <' + info.tagName
+    const typeAttr = info.attrs.find(function(a) { return a.startsWith('type=') })
+    if (typeAttr) title += ' ' + typeAttr
+    title += '>'
+    if (info.text) title += ' "' + info.text + '"'
+    lines.push(title)
+
+    // 选择器
+    lines.push('  选择器: ' + info.selector)
+
+    // 属性
+    if (info.attrs.length > 0) {
+      lines.push('  属性: ' + info.attrs.join(' | '))
+    }
+
+    // 关联标签
+    if (info.label) {
+      lines.push('  关联标签: "' + info.label + '"')
+    }
+
+    // 状态
+    if (info.states.length > 0) {
+      lines.push('  状态: ' + info.states.join(' | '))
+    }
+
+    // 位置
+    lines.push('  位置: ' + info.position + ' (' + info.size + ')')
+
+    // 上下文
+    if (info.context) {
+      lines.push('  上下文: ' + info.context)
+    }
+
+    return lines.join('\n')
   }
 
   /**
@@ -198,10 +329,7 @@
     getSelected() {
       return this._selectedElements.map(el => ({
         selector: el.selector,
-        tagName: el.tagName,
-        className: el.className,
-        textContent: el.textContent,
-        description: el.description
+        info: el.info
       }))
     },
 
@@ -397,7 +525,7 @@
           cursor: 'pointer',
           color: '#475569'
         }, { textContent: '📋 复制' })
-        copyBtn.onclick = () => self._copySelector(el.selector)
+        copyBtn.onclick = () => self._copySelector(el)
         btnGroup.appendChild(copyBtn)
 
         // 删除按钮
@@ -657,8 +785,8 @@
     },
 
     _selectElement(target) {
-      const selector = generateSelector(target)
-      const existingIndex = this._selectedElements.findIndex(el => el.selector === selector)
+      const info = collectElementInfo(target)
+      const existingIndex = this._selectedElements.findIndex(el => el.selector === info.selector)
 
       if (existingIndex !== -1) {
         // 取消选中
@@ -667,14 +795,9 @@
         // 添加选中（无数量限制）
         this._selectedElements.push({
           id: this._nextId++,  // 分配固定 ID
-          selector: selector,
-          tagName: target.tagName.toLowerCase(),
-          className: target.className && typeof target.className === 'string'
-            ? target.className.trim().split(/\s+/).join('.')
-            : '',
-          textContent: getTextContent(target),
-          description: generateDescription(target),
-          element: target
+          selector: info.selector,
+          element: target,
+          info: info
         })
       }
 
@@ -817,9 +940,10 @@
       this._notifyStateChange()
     },
 
-    _copySelector(selector) {
+    _copySelector(el) {
       const self = this
-      navigator.clipboard.writeText(selector).then(() => {
+      const text = formatElementInfo(el.info, el.id)
+      navigator.clipboard.writeText(text).then(() => {
         self._showCopyFeedback('已复制！')
       })
     },
@@ -828,11 +952,10 @@
       const self = this
       const currentUrl = window.location.href
       const elementsText = this._selectedElements.map((el) => {
-        const label = '元素 ' + el.id  // 使用固定 ID
-        return label + ': ' + el.selector + '\n描述: ' + el.description
+        return formatElementInfo(el.info, el.id)
       }).join('\n\n')
 
-      const text = '页面URL: ' + currentUrl + '\n\n' + elementsText
+      const text = '页面: ' + currentUrl + '\n\n' + elementsText
 
       navigator.clipboard.writeText(text).then(() => {
         self._showCopyFeedback('已复制所有选择器！')

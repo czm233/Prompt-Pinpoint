@@ -329,7 +329,7 @@
         color: '#94a3b8',
         textAlign: 'center',
         flexShrink: '0'
-      }, { textContent: '快捷键：Alt+S 开启/关闭 | ESC 关闭 | 点击 ✕ 可取消选中' })
+      }, { textContent: '快捷键：ESC 关闭 | 点击 ✕ 可取消选中 | 拖拽标题栏可移动面板' })
       panel.appendChild(tips)
 
       return panel
@@ -522,11 +522,6 @@
       }
 
       this._handleKeyDown = (e) => {
-        // Alt+S 切换选择模式
-        if (e.altKey && e.key.toLowerCase() === 's') {
-          e.preventDefault()
-          self.toggle()
-        }
         // ESC 关闭选择模式
         if (e.key === 'Escape' && self._isActive) {
           self.stop()

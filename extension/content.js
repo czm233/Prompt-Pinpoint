@@ -135,6 +135,18 @@
     _selectedOverlays: [],
     _panel: null,
 
+    // 拖拽相关状态
+    _isDragging: false,
+    _dragStartX: 0,
+    _dragStartY: 0,
+    _panelStartX: 0,
+    _panelStartY: 0,
+    _handleDragMouseMove: null,
+    _handleDragMouseUp: null,
+
+    // 拖拽结束后防止 click 误触发
+    _wasDragging: false,
+
     // 事件处理函数
     _handleMouseMove: null,
     _handleClick: null,
@@ -250,7 +262,7 @@
         flexDirection: 'column'
       }, { 'data-element-selector-panel': 'true' })
 
-      // 头部
+      // 头部（同时作为拖拽手柄）
       const header = createElement('div', {
         background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
         color: '#fff',
@@ -258,9 +270,18 @@
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        flexShrink: '0'
+        flexShrink: '0',
+        cursor: 'grab',
+        userSelect: 'none'
       })
       header.innerHTML = '<span style="font-weight: 600; font-size: 15px;">🎯 元素选择器</span>'
+
+      // 绑定拖拽事件
+      header.addEventListener('mousedown', (e) => {
+        // 如果点击的是关闭按钮，不触发拖拽
+        if (e.target.closest('button')) return
+        self._startDrag(e)
+      })
 
       const closeBtn = createElement('button', {
         background: 'rgba(255,255,255,0.2)',
@@ -446,6 +467,17 @@
     },
 
     _removeUI() {
+      // 清理拖拽事件
+      if (this._handleDragMouseMove) {
+        document.removeEventListener('mousemove', this._handleDragMouseMove, true)
+        this._handleDragMouseMove = null
+      }
+      if (this._handleDragMouseUp) {
+        document.removeEventListener('mouseup', this._handleDragMouseUp, true)
+        this._handleDragMouseUp = null
+      }
+      this._isDragging = false
+
       if (this._container) {
         this._container.remove()
         this._container = null
@@ -460,6 +492,7 @@
 
       this._handleMouseMove = (e) => {
         if (!self._isActive) return
+        if (self._isDragging) return
 
         const target = e.target
 
@@ -473,6 +506,7 @@
 
       this._handleClick = (e) => {
         if (!self._isActive) return
+        if (self._wasDragging) { self._wasDragging = false; return }
 
         const target = e.target
 
@@ -670,6 +704,115 @@
 
       if (content) this._updatePanelContent(content)
       if (footer) this._updatePanelFooter(footer)
+    },
+
+    // ==================== 拖拽相关方法 ====================
+
+    /**
+     * 开始拖拽面板
+     */
+    _startDrag(e) {
+      if (!this._panel) return
+      const self = this
+      this._isDragging = true
+
+      // 记录鼠标起始位置
+      this._dragStartX = e.clientX
+      this._dragStartY = e.clientY
+
+      // 获取面板当前位置，将 bottom/right 定位转换为 top/left 定位
+      const panelRect = this._panel.getBoundingClientRect()
+      this._panelStartX = panelRect.left
+      this._panelStartY = panelRect.top
+
+      // 切换为 top/left 定位（方便拖拽偏移计算）
+      this._panel.style.bottom = 'auto'
+      this._panel.style.right = 'auto'
+      this._panel.style.top = this._panelStartY + 'px'
+      this._panel.style.left = this._panelStartX + 'px'
+
+      // 拖拽时切换鼠标样式
+      const header = this._panel.firstChild
+      if (header) header.style.cursor = 'grabbing'
+
+      // 绑定 document 级别的 mousemove 和 mouseup
+      this._handleDragMouseMove = (e) => {
+        self._onDrag(e)
+      }
+      this._handleDragMouseUp = (e) => {
+        self._stopDrag(e)
+      }
+      document.addEventListener('mousemove', this._handleDragMouseMove, true)
+      document.addEventListener('mouseup', this._handleDragMouseUp, true)
+
+      // 阻止传播，避免触发元素选择逻辑
+      e.preventDefault()
+      e.stopPropagation()
+    },
+
+    /**
+     * 拖拽进行中
+     */
+    _onDrag(e) {
+      if (!this._isDragging || !this._panel) return
+
+      // 计算偏移量
+      const deltaX = e.clientX - this._dragStartX
+      const deltaY = e.clientY - this._dragStartY
+
+      let newX = this._panelStartX + deltaX
+      let newY = this._panelStartY + deltaY
+
+      // 获取面板尺寸和视口尺寸，限制在视口范围内
+      const panelRect = this._panel.getBoundingClientRect()
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+
+      // 限制左边界
+      if (newX < 0) newX = 0
+      // 限制右边界
+      if (newX + panelRect.width > viewportWidth) newX = viewportWidth - panelRect.width
+      // 限制上边界
+      if (newY < 0) newY = 0
+      // 限制下边界
+      if (newY + panelRect.height > viewportHeight) newY = viewportHeight - panelRect.height
+
+      this._panel.style.left = newX + 'px'
+      this._panel.style.top = newY + 'px'
+
+      // 阻止传播，避免触发元素选择逻辑
+      e.preventDefault()
+      e.stopPropagation()
+    },
+
+    /**
+     * 结束拖拽
+     */
+    _stopDrag(e) {
+      if (!this._isDragging) return
+
+      // 标记拖拽刚结束，防止 click 误触发
+      this._wasDragging = true
+
+      this._isDragging = false
+
+      // 恢复鼠标样式
+      const header = this._panel ? this._panel.firstChild : null
+      if (header) header.style.cursor = 'grab'
+
+      // 清除 document 级别的事件监听
+      if (this._handleDragMouseMove) {
+        document.removeEventListener('mousemove', this._handleDragMouseMove, true)
+        this._handleDragMouseMove = null
+      }
+      if (this._handleDragMouseUp) {
+        document.removeEventListener('mouseup', this._handleDragMouseUp, true)
+        this._handleDragMouseUp = null
+      }
+
+      // 阻止传播
+      e.preventDefault()
+      e.stopPropagation()
     },
 
     _clearSelection() {

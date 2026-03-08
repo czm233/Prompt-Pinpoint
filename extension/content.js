@@ -438,6 +438,43 @@
       this._updatePanelContent(content)
       panel.appendChild(content)
 
+      // Prompt 输入区
+      const promptSection = createElement('div', {
+        padding: '0 16px 12px',
+        flexShrink: '0'
+      })
+
+      const promptLabel = createElement('div', {
+        fontSize: '12px',
+        color: '#64748b',
+        marginBottom: '6px',
+        borderTop: '1px solid #e2e8f0',
+        paddingTop: '12px'
+      }, { innerHTML: '📝 Prompt' })
+      promptSection.appendChild(promptLabel)
+
+      const promptInput = createElement('textarea', {
+        width: '100%',
+        height: '80px',
+        border: '1px solid #e2e8f0',
+        borderRadius: '6px',
+        padding: '8px',
+        fontSize: '13px',
+        fontFamily: 'inherit',
+        resize: 'vertical',
+        outline: 'none',
+        boxSizing: 'border-box',
+        pointerEvents: 'auto'
+      }, { id: 'es-prompt-input', placeholder: '在此编写 prompt，复制时会追加到末尾...' })
+      promptInput.addEventListener('focus', () => {
+        promptInput.style.borderColor = '#3b82f6'
+      })
+      promptInput.addEventListener('blur', () => {
+        promptInput.style.borderColor = '#e2e8f0'
+      })
+      promptSection.appendChild(promptInput)
+      panel.appendChild(promptSection)
+
       // 底部按钮区
       const footer = createElement('div', {
         padding: '12px 16px',
@@ -940,9 +977,19 @@
       this._notifyStateChange()
     },
 
+    _getPromptText() {
+      const promptInput = document.getElementById('es-prompt-input')
+      return promptInput ? promptInput.value.trim() : ''
+    },
+
     _copySelector(el) {
       const self = this
-      const text = formatElementInfo(el.info, el.id)
+      const prompt = this._getPromptText()
+      let text = ''
+      if (prompt) {
+        text += prompt + '\n\n'
+      }
+      text += formatElementInfo(el.info, el.id)
       navigator.clipboard.writeText(text).then(() => {
         self._showCopyFeedback('已复制！')
       })
@@ -950,12 +997,17 @@
 
     _copyAllSelectors() {
       const self = this
+      const prompt = this._getPromptText()
       const currentUrl = window.location.href
       const elementsText = this._selectedElements.map((el) => {
         return formatElementInfo(el.info, el.id)
       }).join('\n\n')
 
-      const text = '页面: ' + currentUrl + '\n\n' + elementsText
+      let text = ''
+      if (prompt) {
+        text += prompt + '\n\n'
+      }
+      text += '页面: ' + currentUrl + '\n\n' + elementsText
 
       navigator.clipboard.writeText(text).then(() => {
         self._showCopyFeedback('已复制所有选择器！')

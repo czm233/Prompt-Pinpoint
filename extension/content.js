@@ -448,14 +448,14 @@
       const header = createElement('div', {
         background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
         color: '#fff',
-        padding: '0',
+        padding: '0 8px',
         height: '28px',
         display: 'flex',
         alignItems: 'center',
         flexShrink: '0',
         cursor: self._devMode ? 'default' : 'grab',
         userSelect: 'none',
-        gap: '0'
+        gap: '6px'
       }, { id: 'es-panel-header' })
 
       // 左侧：已选择元素信息（利用剩余空间）
@@ -474,7 +474,7 @@
       const btnGroup = createElement('div', {
         display: 'flex',
         alignItems: 'center',
-        gap: '0px',
+        gap: '2px',
         flexShrink: '0'
       }, { id: 'es-header-buttons' })
       header.appendChild(btnGroup)
@@ -558,21 +558,14 @@
         flexShrink: '0',
         transition: 'background 0.15s ease'
       }, { id: 'es-copy-bar', textContent: '复制' })
-      copyBar.addEventListener('mouseenter', () => { copyBar.style.background = '#2563eb' })
-      copyBar.addEventListener('mouseleave', () => { copyBar.style.background = '#3b82f6' })
+      copyBar.addEventListener('mouseenter', () => {
+        if (!copyBar._isFeedback) copyBar.style.background = '#2563eb'
+      })
+      copyBar.addEventListener('mouseleave', () => {
+        if (!copyBar._isFeedback) copyBar.style.background = '#3b82f6'
+      })
       copyBar.onclick = () => self._copyAllSelectors()
       panel.appendChild(copyBar)
-
-      // 提示区
-      const tips = createElement('div', {
-        padding: '4px 16px',
-        background: '#f8fafc',
-        fontSize: '11px',
-        color: '#94a3b8',
-        textAlign: 'center',
-        flexShrink: '0'
-      }, { innerHTML: 'Cmd+点击 临时恢复交互<br>⏸ 长期恢复交互' })
-      panel.appendChild(tips)
 
       return panel
     },
@@ -582,6 +575,11 @@
       content.innerHTML = ''
 
       if (this._selectedElements.length === 0) {
+        content.innerHTML =
+          '<div style="color: #b0b0b0; font-size: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; line-height: 1.6;">' +
+            '<span>Cmd+点击 临时恢复交互</span>' +
+            '<span>⏸ 长期恢复交互</span>' +
+          '</div>'
         return
       }
 
@@ -1272,14 +1270,15 @@
     },
 
     _showCopyFeedback(message) {
-      const info = this._panel ? this._panel.querySelector('#es-selected-info') : null
-      if (info) {
-        const originalColor = info.style.color
-        info.textContent = message
-        info.style.color = '#90ee90'
+      const copyBar = this._panel ? this._panel.querySelector('#es-copy-bar') : null
+      if (copyBar) {
+        copyBar._isFeedback = true
+        copyBar.textContent = '复制成功'
+        copyBar.style.background = 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
         setTimeout(() => {
-          this._updateHeaderButtons()
-          info.style.color = originalColor || ''
+          copyBar._isFeedback = false
+          copyBar.textContent = '复制'
+          copyBar.style.background = '#3b82f6'
         }, 1500)
       }
     },

@@ -83,10 +83,16 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 })
 
 // 标签页更新时清理状态（导航到新页面）
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'loading') {
     tabStates.delete(tabId)
     chrome.storage.local.remove([`active_${tabId}`, `count_${tabId}`])
+  }
+  // 页面加载完成后主动注入 content script，确保自定义快捷键立即生效
+  // 即使 content_scripts 配置对当前页面未生效（如扩展更新前已打开的页面）也能正常工作
+  if (changeInfo.status === 'complete' && tab.url &&
+      (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
+    ensureContentScriptInjected(tabId).catch(() => {})
   }
 })
 

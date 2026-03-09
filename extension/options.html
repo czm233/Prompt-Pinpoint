@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ElementSelector - 选项设置</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 40px 20px;
+    }
+    .container { max-width: 520px; margin: 0 auto; }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; color: #0f172a; }
+    .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 16px;
+    }
+    .card-title { font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 4px; }
+    .card-desc { font-size: 12px; color: #94a3b8; margin-bottom: 16px; }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .shortcut-box {
+      flex: 1;
+      height: 40px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0 14px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #334155;
+      background: #f8fafc;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      user-select: none;
+      transition: border-color 0.15s, background 0.15s;
+      outline: none;
+    }
+    .shortcut-box:hover { border-color: #cbd5e1; }
+    .shortcut-box.recording {
+      border-color: #3b82f6;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .shortcut-box.has-conflict {
+      border-color: #ef4444;
+      background: #fef2f2;
+    }
+    .placeholder { color: #94a3b8; font-weight: 400; font-size: 13px; }
+    .btn {
+      height: 40px;
+      padding: 0 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-clear { background: #f1f5f9; color: #64748b; }
+    .btn-save { background: #3b82f6; color: white; }
+    .msg { font-size: 12px; margin-top: 10px; min-height: 16px; }
+    .msg-error { color: #ef4444; }
+    .msg-success { color: #16a34a; }
+    .msg-hint { color: #94a3b8; }
+    .existing-list { margin-top: 16px; border-top: 1px solid #f1f5f9; padding-top: 14px; }
+    .existing-title { font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .existing-item { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #64748b; padding: 4px 0; }
+    .key-tag {
+      display: inline-flex;
+      align-items: center;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 5px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #475569;
+      font-family: monospace;
+    }
+    .key-tag.empty { color: #cbd5e1; font-style: italic; font-weight: 400; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ElementSelector 设置</h1>
+    <p class="subtitle">Chrome 扩展选项</p>
+
+    <div class="card">
+      <div class="card-title">自定义切换快捷键</div>
+      <div class="card-desc">按下后切换元素选择器开/关，效果等同于点击扩展图标</div>
+
+      <div class="row">
+        <div class="shortcut-box" id="shortcutBox" tabindex="0">
+          <span id="shortcutDisplay" class="placeholder">点击后按下快捷键...</span>
+        </div>
+        <button class="btn btn-clear" id="clearBtn">清除</button>
+        <button class="btn btn-save" id="saveBtn">保存</button>
+      </div>
+      <div class="msg msg-hint" id="msgEl">必须包含修饰键（⌘ / ⌃ / ⌥ / ⇧）</div>
+
+      <div class="existing-list">
+        <div class="existing-title">已注册的快捷键</div>
+        <div id="existingList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

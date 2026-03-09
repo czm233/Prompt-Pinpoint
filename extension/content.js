@@ -15,8 +15,6 @@
 
   // 防止重复加载
   if (window.__ElementSelectorExtension) {
-    // 已经加载过，只切换状态
-    window.__ElementSelectorExtension.toggle()
     return
   }
 
@@ -256,6 +254,7 @@
 
   const ElementSelector = {
     _isActive: false,
+    _isPaused: false,  // 暂停选择状态
     _selectedElements: [],
     _hoveredElement: null,
     _nextId: 1, // 用于生成唯一 ID（编号不再回收）
@@ -285,16 +284,23 @@
     _handleScroll: null,
     _handleResize: null,
 
+    // URL 变化检测
+    _lastUrl: null,
+    _urlCheckInterval: null,
+
     /**
      * 启动选择器
      */
     start() {
       if (this._isActive) return
       this._isActive = true
+      this._isPaused = false
       this._createUI()
       this._bindEvents()
       document.body.style.cursor = 'crosshair'
       this._notifyStateChange()
+      // 从 storage 加载已有选择
+      this._loadFromStorage()
       console.log('ElementSelector 已启动')
     },
 
@@ -304,6 +310,7 @@
     stop() {
       if (!this._isActive) return
       this._isActive = false
+      this._isPaused = false
       this._unbindEvents()
       this._removeUI()
       this._resetState()
@@ -440,31 +447,24 @@
 
       // Prompt 输入区
       const promptSection = createElement('div', {
-        padding: '0 16px 12px',
+        padding: '0 16px',
+        borderTop: '1px solid #e2e8f0',
         flexShrink: '0'
       })
 
-      const promptLabel = createElement('div', {
-        fontSize: '12px',
-        color: '#64748b',
-        marginBottom: '6px',
-        borderTop: '1px solid #e2e8f0',
-        paddingTop: '12px'
-      }, { innerHTML: '📝 Prompt' })
-      promptSection.appendChild(promptLabel)
-
       const promptInput = createElement('textarea', {
         width: '100%',
-        height: '80px',
-        border: '1px solid #e2e8f0',
-        borderRadius: '6px',
-        padding: '8px',
+        height: '72px',
+        border: 'none',
+        borderRadius: '0',
+        padding: '6px 0',
         fontSize: '13px',
         fontFamily: 'inherit',
-        resize: 'vertical',
+        resize: 'none',
         outline: 'none',
         boxSizing: 'border-box',
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        display: 'block'
       }, { id: 'es-prompt-input', placeholder: '在此编写 prompt，复制时会追加到末尾...' })
       promptInput.addEventListener('focus', () => {
         promptInput.style.borderColor = '#3b82f6'
@@ -477,7 +477,7 @@
 
       // 底部按钮区
       const footer = createElement('div', {
-        padding: '12px 16px',
+        padding: '6px 16px',
         borderTop: '1px solid #e2e8f0',
         display: 'flex',
         gap: '8px',
@@ -488,13 +488,13 @@
 
       // 提示区
       const tips = createElement('div', {
-        padding: '8px 16px',
+        padding: '4px 16px',
         background: '#f8fafc',
         fontSize: '11px',
         color: '#94a3b8',
         textAlign: 'center',
         flexShrink: '0'
-      }, { textContent: '快捷键：ESC 关闭 | 点击 ✕ 可取消选中 | 拖拽标题栏可移动面板' })
+      }, { textContent: '快捷键：ESC 关闭 | ⌘+点击 正常交互 | 拖拽标题栏移动面板' })
       panel.appendChild(tips)
 
       return panel
@@ -519,67 +519,106 @@
         '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
       ]
 
-      this._selectedElements.forEach((el, index) => {
-        const color = colors[(el.id - 1) % colors.length]  // 颜色基于 ID，不是索引
-        const label = '元素 ' + el.id  // 使用固定 ID
+      // 按 URL 分组
+      const currentUrl = window.location.href
+      const grouped = {}
+      this._selectedElements.forEach((el) => {
+        const url = el.url || currentUrl
+        if (!grouped[url]) grouped[url] = []
+        grouped[url].push(el)
+      })
 
-        // 简化的卡片：只显示标签和按钮
-        const card = createElement('div', {
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '8px 12px',
-          marginBottom: index < self._selectedElements.length - 1 ? '8px' : '0',
-          background: '#fff',
-          borderRadius: '6px',
-          border: '1px solid #e2e8f0'
+      // 当前页面排在最前面
+      const urls = Object.keys(grouped).sort((a, b) => {
+        if (a === currentUrl) return -1
+        if (b === currentUrl) return 1
+        return a.localeCompare(b)
+      })
+
+      urls.forEach((url, urlIndex) => {
+        const elements = grouped[url]
+        const isCurrentPage = url === currentUrl
+
+        // 如果有多个页面，显示页面 URL 标题
+        if (urls.length > 1) {
+          const urlLabel = createElement('div', {
+            fontSize: '11px',
+            color: isCurrentPage ? '#3b82f6' : '#94a3b8',
+            marginBottom: '6px',
+            marginTop: urlIndex > 0 ? '12px' : '0',
+            padding: '4px 8px',
+            background: isCurrentPage ? '#eff6ff' : '#f8fafc',
+            borderRadius: '4px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }, { textContent: (isCurrentPage ? '📍 当前页面: ' : '🔗 ') + url, title: url })
+          content.appendChild(urlLabel)
+        }
+
+        elements.forEach((el, index) => {
+          const color = colors[(el.id - 1) % colors.length]
+          const label = '元素 ' + el.id
+
+          // 卡片样式：其他页面用灰色
+          const card = createElement('div', {
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '8px 12px',
+            marginBottom: index < elements.length - 1 ? '8px' : '0',
+            background: isCurrentPage ? '#fff' : '#f8fafc',
+            borderRadius: '6px',
+            border: '1px solid #e2e8f0',
+            opacity: isCurrentPage ? '1' : '0.75'
+          })
+
+          // 标签
+          const labelEl = createElement('span', {
+            background: isCurrentPage ? color : '#94a3b8',
+            color: '#fff',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: '500'
+          }, { textContent: label })
+          card.appendChild(labelEl)
+
+          // 按钮容器
+          const btnGroup = createElement('div', {
+            display: 'flex',
+            gap: '6px'
+          })
+
+          // 复制按钮
+          const copyBtn = createElement('button', {
+            background: 'transparent',
+            border: '1px solid #e2e8f0',
+            borderRadius: '4px',
+            padding: '4px 8px',
+            fontSize: '12px',
+            cursor: 'pointer',
+            color: '#475569'
+          }, { textContent: '📋 复制' })
+          copyBtn.onclick = () => self._copySelector(el)
+          btnGroup.appendChild(copyBtn)
+
+          // 删除按钮
+          const deleteBtn = createElement('button', {
+            background: 'transparent',
+            border: '1px solid #fecaca',
+            borderRadius: '4px',
+            padding: '4px 8px',
+            fontSize: '12px',
+            cursor: 'pointer',
+            color: '#dc2626'
+          }, { textContent: '🗑️ 删除' })
+          deleteBtn.onclick = () => self._removeElement(el.id)
+          btnGroup.appendChild(deleteBtn)
+
+          card.appendChild(btnGroup)
+          content.appendChild(card)
         })
-
-        // 标签
-        const labelEl = createElement('span', {
-          background: color,
-          color: '#fff',
-          padding: '4px 10px',
-          borderRadius: '4px',
-          fontSize: '12px',
-          fontWeight: '500'
-        }, { textContent: label })
-        card.appendChild(labelEl)
-
-        // 按钮容器
-        const btnGroup = createElement('div', {
-          display: 'flex',
-          gap: '6px'
-        })
-
-        // 复制按钮
-        const copyBtn = createElement('button', {
-          background: 'transparent',
-          border: '1px solid #e2e8f0',
-          borderRadius: '4px',
-          padding: '4px 8px',
-          fontSize: '12px',
-          cursor: 'pointer',
-          color: '#475569'
-        }, { textContent: '📋 复制' })
-        copyBtn.onclick = () => self._copySelector(el)
-        btnGroup.appendChild(copyBtn)
-
-        // 删除按钮
-        const deleteBtn = createElement('button', {
-          background: 'transparent',
-          border: '1px solid #fecaca',
-          borderRadius: '4px',
-          padding: '4px 8px',
-          fontSize: '12px',
-          cursor: 'pointer',
-          color: '#dc2626'
-        }, { textContent: '🗑️ 删除' })
-        deleteBtn.onclick = () => self._removeElement(el.id)
-        btnGroup.appendChild(deleteBtn)
-
-        card.appendChild(btnGroup)
-        content.appendChild(card)
       })
     },
 
@@ -588,6 +627,10 @@
       footer.innerHTML = ''
 
       if (this._selectedElements.length > 0) {
+        // 判断是否有多个页面的选择
+        const urls = new Set(this._selectedElements.map(el => el.url))
+        const hasMultiplePages = urls.size > 1
+
         const copyAllBtn = createElement('button', {
           flex: '1',
           padding: '10px',
@@ -611,13 +654,45 @@
           borderRadius: '6px',
           cursor: 'pointer',
           fontSize: '13px'
-        }, { textContent: '🗑️ 清除选择' })
+        }, { textContent: hasMultiplePages ? '🗑️ 清除本页' : '🗑️ 清除选择' })
         clearBtn.onclick = () => self._clearSelection()
         footer.appendChild(clearBtn)
+
+        // 存在多个页面的选择时，显示"清除所有"按钮
+        if (hasMultiplePages) {
+          const clearAllBtn = createElement('button', {
+            flex: '1',
+            padding: '10px',
+            background: '#ef4444',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontWeight: '500'
+          }, { textContent: '🗑️ 清除所有' })
+          clearAllBtn.onclick = () => self._clearAllSelections()
+          footer.appendChild(clearAllBtn)
+        }
       }
 
-      const closeBtn = createElement('button', {
+      // 暂停/继续按钮
+      const pauseBtn = createElement('button', {
         flex: this._selectedElements.length === 0 ? '1' : 'none',
+        padding: '10px 16px',
+        background: this._isPaused ? '#22c55e' : '#f59e0b',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontWeight: '500'
+      }, { textContent: this._isPaused ? '▶ 继续选择' : '⏸ 暂停选择' })
+      pauseBtn.onclick = () => self._togglePause()
+      footer.appendChild(pauseBtn)
+
+      const closeBtn = createElement('button', {
+        flex: 'none',
         padding: '10px 16px',
         background: '#ef4444',
         color: '#fff',
@@ -657,6 +732,7 @@
 
       this._handleMouseMove = (e) => {
         if (!self._isActive) return
+        if (self._isPaused) return
         if (self._isDragging) return
 
         const target = e.target
@@ -679,6 +755,12 @@
         if (target.closest && target.closest('[data-element-selector-panel]')) return
         // 忽略选中元素标签（overlay）内的元素
         if (target.closest && target.closest('[data-element-selector-overlay]')) return
+
+        // Cmd+Click 穿透：允许正常导航
+        if (e.metaKey) return
+
+        // 暂停时不拦截点击
+        if (self._isPaused) return
 
         e.preventDefault()
         e.stopPropagation()
@@ -703,9 +785,20 @@
 
       document.addEventListener('mousemove', this._handleMouseMove, true)
       document.addEventListener('click', this._handleClick, true)
-      window.addEventListener('keydown', this._handleKeyDown)
+      document.addEventListener('keydown', this._handleKeyDown, true)
       window.addEventListener('scroll', this._handleScroll, true)
       window.addEventListener('resize', this._handleResize)
+
+      // SPA 路由变化检测 + 元素 DOM 重绑定（轮询方式，兼容所有框架）
+      this._lastUrl = window.location.href
+      this._urlCheckInterval = setInterval(() => {
+        if (window.location.href !== self._lastUrl) {
+          self._onUrlChanged()
+        } else {
+          // 尝试为当前页面缺少 DOM 引用的元素恢复绑定（SPA 渲染延迟）
+          self._tryRebindElements()
+        }
+      }, 200)
     },
 
     _unbindEvents() {
@@ -716,13 +809,17 @@
         document.removeEventListener('click', this._handleClick, true)
       }
       if (this._handleKeyDown) {
-        window.removeEventListener('keydown', this._handleKeyDown)
+        document.removeEventListener('keydown', this._handleKeyDown, true)
       }
       if (this._handleScroll) {
         window.removeEventListener('scroll', this._handleScroll, true)
       }
       if (this._handleResize) {
         window.removeEventListener('resize', this._handleResize)
+      }
+      if (this._urlCheckInterval) {
+        clearInterval(this._urlCheckInterval)
+        this._urlCheckInterval = null
       }
     },
 
@@ -754,8 +851,9 @@
         '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
       ]
 
-      // 创建新的遮罩
+      // 只为有 DOM 引用的当前页面元素创建遮罩
       this._selectedElements.forEach((el, index) => {
+        if (!el.element) return  // 其他页面的元素没有 DOM 引用
         const rect = el.element.getBoundingClientRect()
         const color = colors[(el.id - 1) % colors.length]  // 颜色基于 ID，不是索引
         const label = '元素 ' + el.id  // 使用固定 ID
@@ -823,7 +921,7 @@
 
     _selectElement(target) {
       const info = collectElementInfo(target)
-      const existingIndex = this._selectedElements.findIndex(el => el.selector === info.selector)
+      const existingIndex = this._selectedElements.findIndex(el => el.selector === info.selector && el.url === window.location.href)
 
       if (existingIndex !== -1) {
         // 取消选中
@@ -834,13 +932,15 @@
           id: this._nextId++,  // 分配固定 ID
           selector: info.selector,
           element: target,
-          info: info
+          info: info,
+          url: window.location.href
         })
       }
 
       this._updateSelectedOverlays()
       this._refreshPanel()
       this._notifyStateChange()
+      this._saveToStorage()
     },
 
     _removeElement(id) {
@@ -849,6 +949,7 @@
       this._updateSelectedOverlays()
       this._refreshPanel()
       this._notifyStateChange()
+      this._saveToStorage()
     },
 
     _refreshPanel() {
@@ -971,10 +1072,23 @@
     },
 
     _clearSelection() {
-      this._selectedElements = []
+      // 只清除当前页面的元素，保留其他页面的元素
+      const currentUrl = window.location.href
+      this._selectedElements = this._selectedElements.filter(el => el.url !== currentUrl)
       this._updateSelectedOverlays()
       this._refreshPanel()
       this._notifyStateChange()
+      this._saveToStorage()
+    },
+
+    _clearAllSelections() {
+      // 清除所有页面的所有选择
+      this._selectedElements = []
+      this._nextId = 1
+      this._updateSelectedOverlays()
+      this._refreshPanel()
+      this._notifyStateChange()
+      this._saveToStorage()
     },
 
     _getPromptText() {
@@ -989,6 +1103,9 @@
       if (prompt) {
         text += prompt + '\n\n'
       }
+      if (el.url) {
+        text += '页面: ' + el.url + '\n'
+      }
       text += formatElementInfo(el.info, el.id)
       navigator.clipboard.writeText(text).then(() => {
         self._showCopyFeedback('已复制！')
@@ -999,17 +1116,38 @@
       const self = this
       const prompt = this._getPromptText()
       const currentUrl = window.location.href
-      const elementsText = this._selectedElements.map((el) => {
-        return formatElementInfo(el.info, el.id)
-      }).join('\n\n')
+
+      // 按 URL 分组
+      const grouped = {}
+      this._selectedElements.forEach((el) => {
+        const url = el.url || currentUrl
+        if (!grouped[url]) grouped[url] = []
+        grouped[url].push(el)
+      })
+
+      // 当前页面排在最前面
+      const urls = Object.keys(grouped).sort((a, b) => {
+        if (a === currentUrl) return -1
+        if (b === currentUrl) return 1
+        return a.localeCompare(b)
+      })
 
       let text = ''
       if (prompt) {
         text += prompt + '\n\n'
       }
-      text += '页面: ' + currentUrl + '\n\n' + elementsText
 
-      navigator.clipboard.writeText(text).then(() => {
+      urls.forEach((url, index) => {
+        if (index > 0) text += '\n'
+        text += '页面: ' + url + '\n'
+        const elements = grouped[url]
+        text += elements.map((el) => {
+          return formatElementInfo(el.info, el.id)
+        }).join('\n\n')
+        text += '\n'
+      })
+
+      navigator.clipboard.writeText(text.trimEnd()).then(() => {
         self._showCopyFeedback('已复制所有选择器！')
       })
     },
@@ -1023,6 +1161,138 @@
           btn.textContent = originalText
         }, 1500)
       }
+    },
+
+    /**
+     * 切换暂停/继续状态
+     */
+    _togglePause() {
+      this._isPaused = !this._isPaused
+      if (this._isPaused) {
+        // 暂停：恢复默认鼠标样式，隐藏悬停高亮
+        document.body.style.cursor = ''
+        this._hideHoverOverlay()
+      } else {
+        // 继续：恢复 crosshair 鼠标
+        document.body.style.cursor = 'crosshair'
+      }
+      this._refreshPanel()
+    },
+
+    /**
+     * URL 变化时的处理（SPA 路由切换）
+     */
+    _onUrlChanged() {
+      const newUrl = window.location.href
+      if (newUrl === this._lastUrl) return
+      const oldUrl = this._lastUrl
+      this._lastUrl = newUrl
+
+      // 旧页面的元素清空 DOM 引用
+      this._selectedElements.forEach(el => {
+        if (el.url === oldUrl) {
+          el.element = null
+        }
+      })
+
+      this._updateSelectedOverlays()
+      this._refreshPanel()
+      this._saveToStorage()
+    },
+
+    /**
+     * 尝试为当前页面缺少 DOM 引用的元素恢复绑定
+     * 由轮询定时器调用，处理 SPA 渲染延迟的情况
+     */
+    _tryRebindElements() {
+      const currentUrl = window.location.href
+      let changed = false
+      this._selectedElements.forEach(el => {
+        if (el.url === currentUrl && !el.element) {
+          try {
+            const dom = document.querySelector(el.selector)
+            if (dom) {
+              el.element = dom
+              changed = true
+            }
+          } catch (e) {}
+        }
+      })
+      if (changed) {
+        this._updateSelectedOverlays()
+        this._refreshPanel()
+      }
+    },
+
+    /**
+     * 保存选择数据到 chrome.storage.session
+     */
+    _saveToStorage() {
+      if (!chrome || !chrome.storage || !chrome.storage.session) return
+      const data = {
+        selections: this._selectedElements.map(el => ({
+          id: el.id,
+          url: el.url || window.location.href,
+          info: el.info,
+          selector: el.selector
+        })),
+        nextId: this._nextId,
+        isActive: this._isActive
+      }
+      chrome.storage.session.set({ elementSelectorData: data })
+    },
+
+    /**
+     * 从 chrome.storage.session 加载选择数据
+     */
+    _loadFromStorage() {
+      if (!chrome || !chrome.storage || !chrome.storage.session) return
+      const self = this
+      chrome.storage.session.get('elementSelectorData', (result) => {
+        if (!result || !result.elementSelectorData) return
+        const data = result.elementSelectorData
+        const currentUrl = window.location.href
+
+        // 恢复 nextId
+        if (data.nextId && data.nextId > self._nextId) {
+          self._nextId = data.nextId
+        }
+
+        // 恢复选择数据
+        if (data.selections && data.selections.length > 0) {
+          data.selections.forEach((item) => {
+            // 检查是否已经在内存中（避免重复）
+            if (self._selectedElements.some(el => el.id === item.id)) return
+
+            const entry = {
+              id: item.id,
+              url: item.url,
+              info: item.info,
+              selector: item.selector,
+              element: null
+            }
+
+            // 当前页面的元素尝试重新找到 DOM
+            if (item.url === currentUrl) {
+              try {
+                const dom = document.querySelector(item.selector)
+                if (dom) {
+                  entry.element = dom
+                }
+              } catch (e) {
+                // 选择器无效，忽略
+              }
+            }
+
+            self._selectedElements.push(entry)
+          })
+
+          // 刷新 UI
+          self._updateSelectedOverlays()
+          self._refreshPanel()
+          self._notifyStateChange()
+        }
+      })
     },
 
     _notifyStateChange() {
@@ -1059,6 +1329,40 @@
 
   // 挂载到全局（用于防止重复加载检测）
   window.__ElementSelectorExtension = ElementSelector
+
+  // 全局自定义快捷键监听（自动注入后立即生效，无需先激活选择器）
+  let _customShortcut = null
+
+  function _matchesShortcut(e, s) {
+    return e.code === s.key &&
+      e.ctrlKey === s.ctrl &&
+      e.metaKey === s.meta &&
+      e.shiftKey === s.shift &&
+      e.altKey === s.alt
+  }
+
+  try {
+    chrome.storage.sync.get(['customShortcut'], (result) => {
+      _customShortcut = result.customShortcut || null
+    })
+
+    chrome.storage.onChanged.addListener((changes) => {
+      if ('customShortcut' in changes) {
+        _customShortcut = changes.customShortcut.newValue || null
+      }
+    })
+
+    document.addEventListener('keydown', (e) => {
+      if (!_customShortcut) return
+      if (_matchesShortcut(e, _customShortcut)) {
+        e.preventDefault()
+        e.stopPropagation()
+        ElementSelector.toggle()
+      }
+    }, true)
+  } catch (e) {
+    // 忽略错误（扩展可能已被重新加载）
+  }
 
   console.log('🎯 ElementSelector Content Script 已加载！')
 })()

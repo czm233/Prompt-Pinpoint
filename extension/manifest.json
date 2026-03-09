@@ -1,9 +1,17 @@
 {
   "manifest_version": 3,
   "name": "ElementSelector",
-  "version": "1.0.9",
+  "version": "1.2.0",
   "description": "页面元素选择器 - 让非程序员也能精确描述 UI 元素",
   "permissions": ["activeTab", "scripting", "storage"],
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",

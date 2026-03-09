@@ -20,6 +20,15 @@ const clearBtn = document.getElementById('clearBtn')
 const saveBtn = document.getElementById('saveBtn')
 const msgEl = document.getElementById('msgEl')
 const existingList = document.getElementById('existingList')
+const devModeToggle = document.getElementById('devModeToggle')
+
+// 初始化开发者模式
+chrome.storage.sync.get(['devMode'], (result) => {
+  devModeToggle.checked = !!result.devMode
+})
+devModeToggle.addEventListener('change', () => {
+  chrome.storage.sync.set({ devMode: devModeToggle.checked })
+})
 
 // 初始化：读取已保存快捷键 + 读取内置命令
 Promise.all([

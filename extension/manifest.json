@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ElementSelector",
-  "version": "1.2.0",
+  "version": "1.2.35",
   "description": "页面元素选择器 - 让非程序员也能精确描述 UI 元素",
   "permissions": ["activeTab", "scripting", "storage"],
   "options_page": "options.html",

@@ -255,6 +255,7 @@
   const ElementSelector = {
     _isActive: false,
     _isPaused: false,  // 暂停选择状态
+    _devMode: false,   // 开发者模式：允许选中插件自身元素
     _selectedElements: [],
     _hoveredElement: null,
     _nextId: 1, // 用于生成唯一 ID（编号不再回收）
@@ -378,18 +379,64 @@
       document.body.appendChild(this._container)
     },
 
+    // SVG 图标定义
+    _icons: {
+      copyAll: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+      clear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
+      clearAll: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="9" y1="10" x2="15" y2="16"></line><line x1="15" y1="10" x2="9" y2="16"></line></svg>',
+      pause: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
+      resume: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
+      close: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+    },
+
+    /**
+     * 创建标题栏图标按钮
+     */
+    _createIconButton(iconKey, title, onClick) {
+      const btn = createElement('button', {
+        background: 'transparent',
+        border: 'none',
+        color: '#fff',
+        width: '28px',
+        height: '28px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '4px',
+        transition: 'background 0.15s ease, opacity 0.15s ease',
+        flexShrink: '0',
+        opacity: '0.85'
+      }, { title: title })
+      btn.innerHTML = this._icons[iconKey]
+      btn.addEventListener('mouseenter', () => {
+        btn.style.background = 'rgba(255,255,255,0.2)'
+        btn.style.opacity = '1'
+      })
+      btn.addEventListener('mouseleave', () => {
+        btn.style.background = 'transparent'
+        btn.style.opacity = '0.85'
+      })
+      btn.onclick = (e) => {
+        e.stopPropagation()
+        onClick()
+      }
+      return btn
+    },
+
     _createPanel() {
       const self = this
       const panel = createElement('div', {
         position: 'fixed',
         bottom: '20px',
         right: '20px',
-        width: '360px',
-        maxHeight: '500px',
+        width: '233px',
+        height: '300px',
         background: '#fff',
         borderRadius: '12px',
         boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-        zIndex: '2147483647',
+        zIndex: '2147483646',
         overflow: 'hidden',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         pointerEvents: 'auto',
@@ -397,75 +444,97 @@
         flexDirection: 'column'
       }, { 'data-element-selector-panel': 'true' })
 
-      // 头部（同时作为拖拽手柄）
+      // 标题栏（同时作为拖拽手柄）
       const header = createElement('div', {
-        background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+        background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
         color: '#fff',
-        padding: '16px',
+        padding: '0',
+        height: '28px',
         display: 'flex',
-        justifyContent: 'space-between',
         alignItems: 'center',
         flexShrink: '0',
-        cursor: 'grab',
-        userSelect: 'none'
-      })
-      header.innerHTML = '<span style="font-weight: 600; font-size: 15px;">🎯 元素选择器</span>'
+        cursor: self._devMode ? 'default' : 'grab',
+        userSelect: 'none',
+        gap: '0'
+      }, { id: 'es-panel-header' })
 
-      // 绑定拖拽事件
+      // 左侧：已选择元素信息（利用剩余空间）
+      const selectedInfo = createElement('span', {
+        flex: '1',
+        fontSize: '12px',
+        color: 'rgba(255,255,255,0.85)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        minWidth: '0'
+      }, { id: 'es-selected-info', textContent: '0' })
+      header.appendChild(selectedInfo)
+
+      // 右侧：图标按钮组
+      const btnGroup = createElement('div', {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0px',
+        flexShrink: '0'
+      }, { id: 'es-header-buttons' })
+      header.appendChild(btnGroup)
+
+      // 绑定拖拽事件（开发者模式下禁用，避免与元素选择冲突）
       header.addEventListener('mousedown', (e) => {
-        // 如果点击的是关闭按钮，不触发拖拽
+        if (self._devMode) return
         if (e.target.closest('button')) return
         self._startDrag(e)
       })
 
-      const closeBtn = createElement('button', {
-        background: 'rgba(255,255,255,0.2)',
-        border: 'none',
-        color: '#fff',
-        width: '28px',
-        height: '28px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }, { textContent: '✕' })
-      closeBtn.onclick = () => self.stop()
-      header.appendChild(closeBtn)
       panel.appendChild(header)
 
-      // 内容区域
+      // 初始化标题栏按钮（此时 this._panel 尚未赋值，直接操作 btnGroup）
+      this._populateHeaderButtons(btnGroup, selectedInfo)
+
+      // 中间区域：内容 + Prompt 横向排列
+      const middleRow = createElement('div', {
+        display: 'flex',
+        flex: '1',
+        minHeight: '0'
+      })
+
+      // 左侧：内容区域
       const content = createElement('div', {
-        padding: '16px',
+        padding: '4px 6px',
         flex: '1',
         minHeight: '0',
-        overflowY: 'auto'
+        overflowY: 'scroll'
       }, { id: 'es-panel-content' })
       this._updatePanelContent(content)
-      panel.appendChild(content)
+      middleRow.appendChild(content)
 
-      // Prompt 输入区
+      // 右侧：Prompt 输入区
       const promptSection = createElement('div', {
-        padding: '0 16px',
-        borderTop: '1px solid #e2e8f0',
-        flexShrink: '0'
+        width: '50%',
+        flexShrink: '0',
+        borderLeft: '1px solid #333',
+        background: '#1e1e1e'
       })
 
       const promptInput = createElement('textarea', {
         width: '100%',
-        height: '72px',
+        height: '100%',
         border: 'none',
         borderRadius: '0',
-        padding: '6px 0',
-        fontSize: '13px',
+        padding: '6px 8px',
+        fontSize: '12px',
         fontFamily: 'inherit',
         resize: 'none',
         outline: 'none',
         boxSizing: 'border-box',
         pointerEvents: 'auto',
-        display: 'block'
-      }, { id: 'es-prompt-input', placeholder: '在此编写 prompt，复制时会追加到末尾...' })
+        display: 'block',
+        background: '#1e1e1e',
+        color: '#fff',
+        wordWrap: 'break-word',
+        overflowWrap: 'break-word',
+        whiteSpace: 'pre-wrap'
+      }, { id: 'es-prompt-input', placeholder: 'prompt编写区域\n将prompt写在这里\n点击复制会一起复制到剪切板' })
       promptInput.addEventListener('focus', () => {
         promptInput.style.borderColor = '#3b82f6'
       })
@@ -473,18 +542,26 @@
         promptInput.style.borderColor = '#e2e8f0'
       })
       promptSection.appendChild(promptInput)
-      panel.appendChild(promptSection)
+      middleRow.appendChild(promptSection)
+      panel.appendChild(middleRow)
 
-      // 底部按钮区
-      const footer = createElement('div', {
-        padding: '6px 16px',
-        borderTop: '1px solid #e2e8f0',
-        display: 'flex',
-        gap: '8px',
-        flexShrink: '0'
-      }, { id: 'es-panel-footer' })
-      this._updatePanelFooter(footer)
-      panel.appendChild(footer)
+      // 复制全部按钮（占满宽度）
+      const copyBar = createElement('button', {
+        width: '100%',
+        padding: '8px 0',
+        background: '#3b82f6',
+        color: '#fff',
+        border: 'none',
+        fontSize: '13px',
+        fontWeight: '500',
+        cursor: 'pointer',
+        flexShrink: '0',
+        transition: 'background 0.15s ease'
+      }, { id: 'es-copy-bar', textContent: '复制' })
+      copyBar.addEventListener('mouseenter', () => { copyBar.style.background = '#2563eb' })
+      copyBar.addEventListener('mouseleave', () => { copyBar.style.background = '#3b82f6' })
+      copyBar.onclick = () => self._copyAllSelectors()
+      panel.appendChild(copyBar)
 
       // 提示区
       const tips = createElement('div', {
@@ -494,7 +571,7 @@
         color: '#94a3b8',
         textAlign: 'center',
         flexShrink: '0'
-      }, { textContent: '快捷键：ESC 关闭 | ⌘+点击 正常交互 | 拖拽标题栏移动面板' })
+      }, { innerHTML: 'Cmd+点击 临时恢复交互<br>⏸ 长期恢复交互' })
       panel.appendChild(tips)
 
       return panel
@@ -505,11 +582,6 @@
       content.innerHTML = ''
 
       if (this._selectedElements.length === 0) {
-        content.innerHTML =
-          '<div style="color: #64748b; text-align: center; padding: 20px 0;">' +
-            '<div style="font-size: 40px; margin-bottom: 12px;">👆</div>' +
-            '<div>点击页面元素进行选择</div>' +
-          '</div>'
         return
       }
 
@@ -558,18 +630,18 @@
 
         elements.forEach((el, index) => {
           const color = colors[(el.id - 1) % colors.length]
-          const label = '元素 ' + el.id
+          const label = '' + el.id
 
           // 卡片样式：其他页面用灰色
           const card = createElement('div', {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '8px 12px',
-            marginBottom: index < elements.length - 1 ? '8px' : '0',
+            padding: '2px 4px',
+            marginBottom: index < elements.length - 1 ? '2px' : '0',
             background: isCurrentPage ? '#fff' : '#f8fafc',
-            borderRadius: '6px',
-            border: '1px solid #e2e8f0',
+            borderRadius: '4px',
+            border: 'none',
             opacity: isCurrentPage ? '1' : '0.75'
           })
 
@@ -577,42 +649,61 @@
           const labelEl = createElement('span', {
             background: isCurrentPage ? color : '#94a3b8',
             color: '#fff',
-            padding: '4px 10px',
-            borderRadius: '4px',
+            padding: '2px 0',
+            borderRadius: '3px',
             fontSize: '12px',
-            fontWeight: '500'
+            fontWeight: '500',
+            minWidth: '24px',
+            textAlign: 'center',
+            display: 'inline-block'
           }, { textContent: label })
           card.appendChild(labelEl)
 
           // 按钮容器
           const btnGroup = createElement('div', {
             display: 'flex',
-            gap: '6px'
+            gap: '4px'
           })
 
-          // 复制按钮
+          // 复制按钮（图标）
           const copyBtn = createElement('button', {
             background: 'transparent',
-            border: '1px solid #e2e8f0',
+            border: 'none',
             borderRadius: '4px',
-            padding: '4px 8px',
-            fontSize: '12px',
+            padding: '4px',
+            width: '24px',
+            height: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             cursor: 'pointer',
-            color: '#475569'
-          }, { textContent: '📋 复制' })
+            color: '#94a3b8',
+            transition: 'color 0.15s ease, background 0.15s ease'
+          }, { title: '复制' })
+          copyBtn.innerHTML = self._icons.copyAll
+          copyBtn.addEventListener('mouseenter', () => { copyBtn.style.color = '#3b82f6'; copyBtn.style.background = '#eff6ff' })
+          copyBtn.addEventListener('mouseleave', () => { copyBtn.style.color = '#94a3b8'; copyBtn.style.background = 'transparent' })
           copyBtn.onclick = () => self._copySelector(el)
           btnGroup.appendChild(copyBtn)
 
-          // 删除按钮
+          // 删除按钮（图标）
           const deleteBtn = createElement('button', {
             background: 'transparent',
-            border: '1px solid #fecaca',
+            border: 'none',
             borderRadius: '4px',
-            padding: '4px 8px',
-            fontSize: '12px',
+            padding: '4px',
+            width: '24px',
+            height: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             cursor: 'pointer',
-            color: '#dc2626'
-          }, { textContent: '🗑️ 删除' })
+            color: '#94a3b8',
+            transition: 'color 0.15s ease, background 0.15s ease'
+          }, { title: '删除' })
+          deleteBtn.innerHTML = self._icons.clear
+          deleteBtn.addEventListener('mouseenter', () => { deleteBtn.style.color = '#ef4444'; deleteBtn.style.background = '#fef2f2' })
+          deleteBtn.addEventListener('mouseleave', () => { deleteBtn.style.color = '#94a3b8'; deleteBtn.style.background = 'transparent' })
           deleteBtn.onclick = () => self._removeElement(el.id)
           btnGroup.appendChild(deleteBtn)
 
@@ -622,88 +713,96 @@
       })
     },
 
-    _updatePanelFooter(footer) {
+    /**
+     * 更新标题栏中的图标按钮组和选择信息
+     */
+    _updateHeaderButtons() {
+      if (!this._panel) return
+
+      const btnGroup = this._panel.querySelector('#es-header-buttons')
+      const infoEl = this._panel.querySelector('#es-selected-info')
+      if (!btnGroup) return
+
+      this._populateHeaderButtons(btnGroup, infoEl)
+    },
+
+    /**
+     * 填充标题栏按钮和选择信息（可在 panel 初始化和刷新时复用）
+     */
+    _populateHeaderButtons(btnGroup, infoEl) {
       const self = this
-      footer.innerHTML = ''
+      btnGroup.innerHTML = ''
 
-      if (this._selectedElements.length > 0) {
-        // 判断是否有多个页面的选择
-        const urls = new Set(this._selectedElements.map(el => el.url))
-        const hasMultiplePages = urls.size > 1
+      const hasSelected = this._selectedElements.length > 0
+      const urls = new Set(this._selectedElements.map(el => el.url))
+      const hasMultiplePages = urls.size > 1
 
-        const copyAllBtn = createElement('button', {
-          flex: '1',
-          padding: '10px',
-          background: '#3b82f6',
-          color: '#fff',
-          border: 'none',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          fontSize: '13px',
-          fontWeight: '500'
-        }, { textContent: '📋 复制全部', id: 'es-copy-all-btn' })
-        copyAllBtn.onclick = () => self._copyAllSelectors()
-        footer.appendChild(copyAllBtn)
+      // 清除按钮（始终显示）
+      const clearBtn = this._createIconButton('clear', hasMultiplePages ? '清除本页' : '清除选择', () => self._clearSelection())
+      btnGroup.appendChild(clearBtn)
 
-        const clearBtn = createElement('button', {
-          flex: '1',
-          padding: '10px',
-          background: '#fff',
-          color: '#475569',
-          border: '1px solid #e2e8f0',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          fontSize: '13px'
-        }, { textContent: hasMultiplePages ? '🗑️ 清除本页' : '🗑️ 清除选择' })
-        clearBtn.onclick = () => self._clearSelection()
-        footer.appendChild(clearBtn)
-
-        // 存在多个页面的选择时，显示"清除所有"按钮
-        if (hasMultiplePages) {
-          const clearAllBtn = createElement('button', {
-            flex: '1',
-            padding: '10px',
-            background: '#ef4444',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: '500'
-          }, { textContent: '🗑️ 清除所有' })
-          clearAllBtn.onclick = () => self._clearAllSelections()
-          footer.appendChild(clearAllBtn)
-        }
+      // 清除所有按钮（多页面时显示）
+      if (hasMultiplePages) {
+        const clearAllBtn = this._createIconButton('clearAll', '清除所有', () => self._clearAllSelections())
+        btnGroup.appendChild(clearAllBtn)
       }
 
-      // 暂停/继续按钮
-      const pauseBtn = createElement('button', {
-        flex: this._selectedElements.length === 0 ? '1' : 'none',
-        padding: '10px 16px',
-        background: this._isPaused ? '#22c55e' : '#f59e0b',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '500'
-      }, { textContent: this._isPaused ? '▶ 继续选择' : '⏸ 暂停选择' })
-      pauseBtn.onclick = () => self._togglePause()
-      footer.appendChild(pauseBtn)
+      // 分隔线（始终显示）
+      const divider = createElement('div', {
+        width: '1px',
+        height: '16px',
+        background: 'rgba(255,255,255,0.3)',
+        flexShrink: '0'
+      })
+      btnGroup.appendChild(divider)
 
-      const closeBtn = createElement('button', {
-        flex: 'none',
-        padding: '10px 16px',
-        background: '#ef4444',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '500'
-      }, { textContent: '关闭' })
-      closeBtn.onclick = () => self.stop()
-      footer.appendChild(closeBtn)
+      // 暂停/继续按钮
+      const pauseBtn = this._createIconButton(
+        this._isPaused ? 'resume' : 'pause',
+        this._isPaused ? '继续选择' : '暂停选择',
+        () => self._togglePause()
+      )
+      btnGroup.appendChild(pauseBtn)
+
+      // 关闭按钮分隔线（始终显示）
+      const closeDivider = createElement('div', {
+        width: '1px',
+        height: '16px',
+        background: 'rgba(255,255,255,0.3)',
+        flexShrink: '0',
+        marginLeft: '4px',
+        marginRight: '4px'
+      })
+      btnGroup.appendChild(closeDivider)
+
+      // 关闭按钮
+      const closeBtn = this._createIconButton('close', '关闭', () => self.stop())
+      btnGroup.appendChild(closeBtn)
+
+      // 更新选择信息
+      if (infoEl) {
+        this._updateSelectedInfoEl(infoEl)
+      }
+    },
+
+    /**
+     * 更新标题栏中间的已选择元素信息
+     */
+    _updateSelectedInfoEl(infoEl) {
+      const count = this._selectedElements.length
+      if (count === 0) {
+        infoEl.textContent = this._isPaused ? '已暂停' : '0'
+      } else {
+        const urls = new Set(this._selectedElements.map(el => el.url))
+        let text = '' + count
+        if (urls.size > 1) {
+          text += '（' + urls.size + ' 个页面）'
+        }
+        if (this._isPaused) {
+          text += ' | 已暂停'
+        }
+        infoEl.textContent = text
+      }
     },
 
     _removeUI() {
@@ -736,9 +835,14 @@
         if (self._isDragging) return
 
         const target = e.target
+        const isPanel = target.closest && target.closest('[data-element-selector-panel]')
 
-        // 忽略面板内的元素
-        if (target.closest && target.closest('[data-element-selector-panel]')) return
+        // 开发者模式：仅捕获面板自身元素
+        if (self._devMode) {
+          if (!isPanel) return
+        } else {
+          if (isPanel) return
+        }
 
         e.stopPropagation()
         self._hoveredElement = target
@@ -750,9 +854,14 @@
         if (self._wasDragging) { self._wasDragging = false; return }
 
         const target = e.target
+        const isPanel = target.closest && target.closest('[data-element-selector-panel]')
 
-        // 忽略面板内的元素
-        if (target.closest && target.closest('[data-element-selector-panel]')) return
+        // 开发者模式：仅捕获面板自身元素
+        if (self._devMode) {
+          if (!isPanel) return
+        } else {
+          if (isPanel) return
+        }
         // 忽略选中元素标签（overlay）内的元素
         if (target.closest && target.closest('[data-element-selector-overlay]')) return
 
@@ -826,6 +935,7 @@
     _updateHoverOverlay(rect) {
       if (!this._hoverOverlay) return
       this._hoverOverlay.style.display = 'block'
+      this._hoverOverlay.style.zIndex = this._devMode ? '2147483648' : '2147483646'
       this._hoverOverlay.style.left = rect.left + 'px'
       this._hoverOverlay.style.top = rect.top + 'px'
       this._hoverOverlay.style.width = rect.width + 'px'
@@ -856,14 +966,14 @@
         if (!el.element) return  // 其他页面的元素没有 DOM 引用
         const rect = el.element.getBoundingClientRect()
         const color = colors[(el.id - 1) % colors.length]  // 颜色基于 ID，不是索引
-        const label = '元素 ' + el.id  // 使用固定 ID
+        const label = '' + el.id  // 使用固定 ID
 
         const overlay = createElement('div', {
           position: 'fixed',
           pointerEvents: 'none',
           border: '2px solid ' + color,
           background: color + '20',
-          zIndex: '2147483645',
+          zIndex: self._devMode ? '2147483648' : '2147483645',
           left: rect.left + 'px',
           top: rect.top + 'px',
           width: rect.width + 'px',
@@ -956,10 +1066,12 @@
       if (!this._panel) return
 
       const content = this._panel.querySelector('#es-panel-content')
-      const footer = this._panel.querySelector('#es-panel-footer')
-
       if (content) this._updatePanelContent(content)
-      if (footer) this._updatePanelFooter(footer)
+      this._updateHeaderButtons()
+
+      // 开发者模式下禁用拖拽光标
+      const header = this._panel.querySelector('#es-panel-header')
+      if (header) header.style.cursor = this._devMode ? 'default' : 'grab'
     },
 
     // ==================== 拖拽相关方法 ====================
@@ -1103,7 +1215,7 @@
       if (prompt) {
         text += prompt + '\n\n'
       }
-      if (el.url) {
+      if (el.url && !self._devMode) {
         text += '页面: ' + el.url + '\n'
       }
       text += formatElementInfo(el.info, el.id)
@@ -1115,6 +1227,10 @@
     _copyAllSelectors() {
       const self = this
       const prompt = this._getPromptText()
+
+      // 无元素且无 prompt 时不执行
+      if (this._selectedElements.length === 0 && !prompt) return
+
       const currentUrl = window.location.href
 
       // 按 URL 分组
@@ -1139,7 +1255,10 @@
 
       urls.forEach((url, index) => {
         if (index > 0) text += '\n'
-        text += '页面: ' + url + '\n'
+        // 开发者模式不带 URL
+        if (!self._devMode) {
+          text += '页面: ' + url + '\n'
+        }
         const elements = grouped[url]
         text += elements.map((el) => {
           return formatElementInfo(el.info, el.id)
@@ -1153,12 +1272,14 @@
     },
 
     _showCopyFeedback(message) {
-      const btn = document.getElementById('es-copy-all-btn')
-      if (btn) {
-        const originalText = btn.textContent
-        btn.textContent = message
+      const info = this._panel ? this._panel.querySelector('#es-selected-info') : null
+      if (info) {
+        const originalColor = info.style.color
+        info.textContent = message
+        info.style.color = '#90ee90'
         setTimeout(() => {
-          btn.textContent = originalText
+          this._updateHeaderButtons()
+          info.style.color = originalColor || ''
         }, 1500)
       }
     },
@@ -1169,12 +1290,17 @@
     _togglePause() {
       this._isPaused = !this._isPaused
       if (this._isPaused) {
-        // 暂停：恢复默认鼠标样式，隐藏悬停高亮
         document.body.style.cursor = ''
         this._hideHoverOverlay()
       } else {
-        // 继续：恢复 crosshair 鼠标
         document.body.style.cursor = 'crosshair'
+      }
+      // 切换标题栏颜色
+      const header = this._panel ? this._panel.querySelector('#es-panel-header') : null
+      if (header) {
+        header.style.background = this._isPaused
+          ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+          : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
       }
       this._refreshPanel()
     },
@@ -1342,13 +1468,17 @@
   }
 
   try {
-    chrome.storage.sync.get(['customShortcut'], (result) => {
+    chrome.storage.sync.get(['customShortcut', 'devMode'], (result) => {
       _customShortcut = result.customShortcut || null
+      ElementSelector._devMode = !!result.devMode
     })
 
     chrome.storage.onChanged.addListener((changes) => {
       if ('customShortcut' in changes) {
         _customShortcut = changes.customShortcut.newValue || null
+      }
+      if ('devMode' in changes) {
+        ElementSelector._devMode = !!changes.devMode.newValue
       }
     })
 

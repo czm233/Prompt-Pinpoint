@@ -91,6 +91,25 @@
     .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
     .switch input:checked + .slider { background: #3b82f6; }
     .switch input:checked + .slider:before { transform: translateX(20px); }
+    .size-selector { display: flex; gap: 0; border: 1.5px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .size-btn {
+      flex: 1;
+      padding: 10px 0;
+      border: none;
+      background: #f8fafc;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #64748b;
+      transition: background 0.15s, color 0.15s;
+      border-right: 1px solid #e2e8f0;
+      line-height: 1.4;
+    }
+    .size-btn:last-child { border-right: none; }
+    .size-btn:hover { background: #f1f5f9; }
+    .size-btn.active { background: #3b82f6; color: white; }
+    .size-btn.active:hover { background: #2563eb; }
+    .size-hint { font-size: 11px; font-weight: 400; opacity: 0.75; }
   </style>
 </head>
 <body>
@@ -127,6 +146,16 @@
           <input type="checkbox" id="devModeToggle">
           <span class="slider"></span>
         </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">面板尺寸</div>
+      <div class="card-desc">选择面板的显示大小</div>
+      <div class="size-selector" id="sizeSelector">
+        <button class="size-btn active" data-size="small">小<br><span class="size-hint">紧凑</span></button>
+        <button class="size-btn" data-size="medium">中<br><span class="size-hint">适中</span></button>
+        <button class="size-btn" data-size="large">大<br><span class="size-hint">宽敞</span></button>
       </div>
     </div>
   </div>

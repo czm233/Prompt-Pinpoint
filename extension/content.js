@@ -18,6 +18,92 @@
     return
   }
 
+  // ==================== 面板尺寸预设 ====================
+
+  const PANEL_SIZE_PRESETS = {
+    small: {
+      panelWidth: '233px',
+      panelHeight: '300px',
+      panelBorderRadius: '12px',
+      headerPadding: '4px 2px 4px 8px',
+      headerGap: '6px',
+      iconBtnSize: '36px',
+      iconBtnPadding: '6px',
+      svgIconSize: 20,
+      selectedInfoFontSize: '13px',
+      copyBarHeight: '44px',
+      copyBarFontSize: '13px',
+      contentPadding: '4px 6px',
+      promptInputPadding: '6px 8px',
+      promptInputFontSize: '12px',
+      placeholderFontSize: '11px',
+      hintFontSize: '11px',
+      urlLabelFontSize: '11px',
+      urlLabelPadding: '4px 8px',
+      cardPadding: '2px 4px',
+      labelElFontSize: '12px',
+      labelElMinWidth: '24px',
+      smallBtnSize: '24px',
+      smallBtnPadding: '4px',
+      btnGroupGap: '4px',
+      dividerHeight: '16px',
+    },
+    medium: {
+      panelWidth: '280px',
+      panelHeight: '360px',
+      panelBorderRadius: '14px',
+      headerPadding: '6px 4px 6px 10px',
+      headerGap: '8px',
+      iconBtnSize: '42px',
+      iconBtnPadding: '8px',
+      svgIconSize: 24,
+      selectedInfoFontSize: '15px',
+      copyBarHeight: '52px',
+      copyBarFontSize: '15px',
+      contentPadding: '6px 8px',
+      promptInputPadding: '8px 10px',
+      promptInputFontSize: '14px',
+      placeholderFontSize: '13px',
+      hintFontSize: '13px',
+      urlLabelFontSize: '13px',
+      urlLabelPadding: '5px 10px',
+      cardPadding: '4px 6px',
+      labelElFontSize: '14px',
+      labelElMinWidth: '28px',
+      smallBtnSize: '30px',
+      smallBtnPadding: '5px',
+      btnGroupGap: '5px',
+      dividerHeight: '20px',
+    },
+    large: {
+      panelWidth: '340px',
+      panelHeight: '440px',
+      panelBorderRadius: '16px',
+      headerPadding: '8px 6px 8px 14px',
+      headerGap: '10px',
+      iconBtnSize: '50px',
+      iconBtnPadding: '10px',
+      svgIconSize: 28,
+      selectedInfoFontSize: '17px',
+      copyBarHeight: '62px',
+      copyBarFontSize: '17px',
+      contentPadding: '8px 12px',
+      promptInputPadding: '10px 14px',
+      promptInputFontSize: '16px',
+      placeholderFontSize: '15px',
+      hintFontSize: '15px',
+      urlLabelFontSize: '15px',
+      urlLabelPadding: '6px 12px',
+      cardPadding: '6px 8px',
+      labelElFontSize: '16px',
+      labelElMinWidth: '34px',
+      smallBtnSize: '36px',
+      smallBtnPadding: '6px',
+      btnGroupGap: '6px',
+      dividerHeight: '24px',
+    },
+  }
+
   // ==================== 工具函数 ====================
 
   /**
@@ -151,6 +237,10 @@
     // 尺寸与位置
     const rect = element.getBoundingClientRect()
     info.size = Math.round(rect.width) + 'x' + Math.round(rect.height)
+    info.coords = {
+      x: Math.round(rect.left + window.scrollX),
+      y: Math.round(rect.top + window.scrollY)
+    }
 
     const vw = window.innerWidth
     const vh = window.innerHeight
@@ -216,7 +306,11 @@
     }
 
     // 位置
-    lines.push('  位置: ' + info.position + ' (' + info.size + ')')
+    let posLine = '  位置: ' + info.position + ' (' + info.size + ')'
+    if (info.coords) {
+      posLine += ' @(' + info.coords.x + ', ' + info.coords.y + ')'
+    }
+    lines.push(posLine)
 
     // 上下文
     if (info.context) {
@@ -256,6 +350,7 @@
     _isActive: false,
     _isPaused: false,  // 暂停选择状态
     _devMode: false,   // 开发者模式：允许选中插件自身元素
+    _panelSize: 'small', // 面板尺寸预设
     _selectedElements: [],
     _hoveredElement: null,
     _nextId: 1, // 用于生成唯一 ID（编号不再回收）
@@ -277,6 +372,9 @@
 
     // 拖拽结束后防止 click 误触发
     _wasDragging: false,
+
+    // 历史记录浮层
+    _historyOverlay: null,
 
     // 事件处理函数
     _handleMouseMove: null,
@@ -348,6 +446,10 @@
       this._hoveredElement = null
     },
 
+    _sizeConfig() {
+      return PANEL_SIZE_PRESETS[this._panelSize] || PANEL_SIZE_PRESETS.small
+    },
+
     _createUI() {
       // 创建容器
       this._container = createElement('div', {
@@ -379,37 +481,45 @@
       document.body.appendChild(this._container)
     },
 
-    // SVG 图标定义
+    // SVG 图标定义（不含固定 width/height，由代码动态设置）
     _icons: {
-      copyAll: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
-      clear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
-      clearAll: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="9" y1="10" x2="15" y2="16"></line><line x1="15" y1="10" x2="9" y2="16"></line></svg>',
-      pause: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
-      resume: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
-      close: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'
+      copyAll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+      clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
+      clearAll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="9" y1="10" x2="15" y2="16"></line><line x1="15" y1="10" x2="9" y2="16"></line></svg>',
+      pause: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
+      resume: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
+      close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+      history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>'
     },
 
     /**
      * 创建标题栏图标按钮
      */
     _createIconButton(iconKey, title, onClick) {
+      const sc = this._sizeConfig()
       const btn = createElement('button', {
         background: 'transparent',
         border: 'none',
         color: '#fff',
-        width: '28px',
-        height: '28px',
-        borderRadius: '4px',
+        width: sc.iconBtnSize,
+        height: sc.iconBtnSize,
+        borderRadius: '6px',
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '4px',
+        padding: sc.iconBtnPadding,
         transition: 'background 0.15s ease, opacity 0.15s ease',
         flexShrink: '0',
         opacity: '0.85'
       }, { title: title })
       btn.innerHTML = this._icons[iconKey]
+      // 动态设置 SVG 图标尺寸
+      const svg = btn.querySelector('svg')
+      if (svg) {
+        svg.setAttribute('width', sc.svgIconSize)
+        svg.setAttribute('height', sc.svgIconSize)
+      }
       btn.addEventListener('mouseenter', () => {
         btn.style.background = 'rgba(255,255,255,0.2)'
         btn.style.opacity = '1'
@@ -427,14 +537,15 @@
 
     _createPanel() {
       const self = this
+      const sc = this._sizeConfig()
       const panel = createElement('div', {
         position: 'fixed',
         bottom: '20px',
         right: '20px',
-        width: '233px',
-        height: '300px',
+        width: sc.panelWidth,
+        height: sc.panelHeight,
         background: '#fff',
-        borderRadius: '12px',
+        borderRadius: sc.panelBorderRadius,
         boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
         zIndex: '2147483646',
         overflow: 'hidden',
@@ -448,21 +559,21 @@
       const header = createElement('div', {
         background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
         color: '#fff',
-        padding: '0 8px',
-        height: '28px',
+        padding: sc.headerPadding,
         display: 'flex',
         alignItems: 'center',
         flexShrink: '0',
         cursor: self._devMode ? 'default' : 'grab',
         userSelect: 'none',
-        gap: '6px'
+        gap: sc.headerGap
       }, { id: 'es-panel-header' })
 
       // 左侧：已选择元素信息（利用剩余空间）
       const selectedInfo = createElement('span', {
         flex: '1',
-        fontSize: '12px',
-        color: 'rgba(255,255,255,0.85)',
+        fontSize: sc.selectedInfoFontSize,
+        fontWeight: '500',
+        color: 'rgba(255,255,255,0.9)',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
@@ -500,10 +611,10 @@
 
       // 左侧：内容区域
       const content = createElement('div', {
-        padding: '4px 6px',
+        padding: sc.contentPadding,
         flex: '1',
         minHeight: '0',
-        overflowY: 'scroll'
+        overflowY: 'auto'
       }, { id: 'es-panel-content' })
       this._updatePanelContent(content)
       middleRow.appendChild(content)
@@ -512,8 +623,9 @@
       const promptSection = createElement('div', {
         width: '50%',
         flexShrink: '0',
-        borderLeft: '1px solid #333',
-        background: '#1e1e1e'
+        borderLeft: 'none',
+        background: '#1e1e1e',
+        position: 'relative'
       })
 
       const promptInput = createElement('textarea', {
@@ -521,26 +633,59 @@
         height: '100%',
         border: 'none',
         borderRadius: '0',
-        padding: '6px 8px',
-        fontSize: '12px',
+        padding: sc.promptInputPadding,
+        fontSize: sc.promptInputFontSize,
         fontFamily: 'inherit',
         resize: 'none',
         outline: 'none',
         boxSizing: 'border-box',
         pointerEvents: 'auto',
         display: 'block',
-        background: '#1e1e1e',
+        background: 'transparent',
         color: '#fff',
         wordWrap: 'break-word',
         overflowWrap: 'break-word',
-        whiteSpace: 'pre-wrap'
-      }, { id: 'es-prompt-input', placeholder: 'prompt编写区域\n将prompt写在这里\n点击复制会一起复制到剪切板' })
+        whiteSpace: 'pre-wrap',
+        position: 'relative',
+        zIndex: '1'
+      }, { id: 'es-prompt-input', placeholder: '' })
+
+      // 自定义居中 placeholder
+      const placeholderDiv = createElement('div', {
+        position: 'absolute',
+        top: '0',
+        left: '0',
+        right: '0',
+        bottom: '0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#666',
+        fontSize: sc.placeholderFontSize,
+        textAlign: 'center',
+        lineHeight: '1.6',
+        pointerEvents: 'none',
+        zIndex: '0'
+      })
+      placeholderDiv.innerHTML = 'prompt编写区域<br>将prompt写在这里<br>点击复制会一起复制到剪切板'
+
+      const togglePlaceholder = () => {
+        placeholderDiv.style.display = promptInput.value ? 'none' : 'flex'
+      }
+      promptInput.addEventListener('input', togglePlaceholder)
       promptInput.addEventListener('focus', () => {
         promptInput.style.borderColor = '#3b82f6'
       })
       promptInput.addEventListener('blur', () => {
         promptInput.style.borderColor = '#e2e8f0'
       })
+      promptInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+          self._copyAllSelectors()
+        }
+      })
+      promptSection.appendChild(placeholderDiv)
       promptSection.appendChild(promptInput)
       middleRow.appendChild(promptSection)
       panel.appendChild(middleRow)
@@ -548,11 +693,12 @@
       // 复制全部按钮（占满宽度）
       const copyBar = createElement('button', {
         width: '100%',
-        padding: '8px 0',
+        height: sc.copyBarHeight,
+        padding: '0',
         background: '#3b82f6',
         color: '#fff',
         border: 'none',
-        fontSize: '13px',
+        fontSize: sc.copyBarFontSize,
         fontWeight: '500',
         cursor: 'pointer',
         flexShrink: '0',
@@ -572,11 +718,12 @@
 
     _updatePanelContent(content) {
       const self = this
+      const sc = this._sizeConfig()
       content.innerHTML = ''
 
       if (this._selectedElements.length === 0) {
         content.innerHTML =
-          '<div style="color: #b0b0b0; font-size: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; line-height: 1.6;">' +
+          '<div style="color: #b0b0b0; font-size: ' + sc.hintFontSize + '; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; line-height: 1.6;">' +
             '<span>Cmd+点击 临时恢复交互</span>' +
             '<span>⏸ 长期恢复交互</span>' +
           '</div>'
@@ -612,11 +759,11 @@
         // 如果有多个页面，显示页面 URL 标题
         if (urls.length > 1) {
           const urlLabel = createElement('div', {
-            fontSize: '11px',
+            fontSize: sc.urlLabelFontSize,
             color: isCurrentPage ? '#3b82f6' : '#94a3b8',
             marginBottom: '6px',
             marginTop: urlIndex > 0 ? '12px' : '0',
-            padding: '4px 8px',
+            padding: sc.urlLabelPadding,
             background: isCurrentPage ? '#eff6ff' : '#f8fafc',
             borderRadius: '4px',
             overflow: 'hidden',
@@ -635,7 +782,7 @@
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '2px 4px',
+            padding: sc.cardPadding,
             marginBottom: index < elements.length - 1 ? '2px' : '0',
             background: isCurrentPage ? '#fff' : '#f8fafc',
             borderRadius: '4px',
@@ -649,9 +796,9 @@
             color: '#fff',
             padding: '2px 0',
             borderRadius: '3px',
-            fontSize: '12px',
+            fontSize: sc.labelElFontSize,
             fontWeight: '500',
-            minWidth: '24px',
+            minWidth: sc.labelElMinWidth,
             textAlign: 'center',
             display: 'inline-block'
           }, { textContent: label })
@@ -660,7 +807,7 @@
           // 按钮容器
           const btnGroup = createElement('div', {
             display: 'flex',
-            gap: '4px'
+            gap: sc.btnGroupGap
           })
 
           // 复制按钮（图标）
@@ -668,9 +815,9 @@
             background: 'transparent',
             border: 'none',
             borderRadius: '4px',
-            padding: '4px',
-            width: '24px',
-            height: '24px',
+            padding: sc.smallBtnPadding,
+            width: sc.smallBtnSize,
+            height: sc.smallBtnSize,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -679,6 +826,13 @@
             transition: 'color 0.15s ease, background 0.15s ease'
           }, { title: '复制' })
           copyBtn.innerHTML = self._icons.copyAll
+          // 动态设置小按钮中 SVG 图标尺寸（使用较小的尺寸）
+          const copySvg = copyBtn.querySelector('svg')
+          if (copySvg) {
+            const smallIconSize = Math.round(sc.svgIconSize * 0.7)
+            copySvg.setAttribute('width', smallIconSize)
+            copySvg.setAttribute('height', smallIconSize)
+          }
           copyBtn.addEventListener('mouseenter', () => { copyBtn.style.color = '#3b82f6'; copyBtn.style.background = '#eff6ff' })
           copyBtn.addEventListener('mouseleave', () => { copyBtn.style.color = '#94a3b8'; copyBtn.style.background = 'transparent' })
           copyBtn.onclick = () => self._copySelector(el)
@@ -689,9 +843,9 @@
             background: 'transparent',
             border: 'none',
             borderRadius: '4px',
-            padding: '4px',
-            width: '24px',
-            height: '24px',
+            padding: sc.smallBtnPadding,
+            width: sc.smallBtnSize,
+            height: sc.smallBtnSize,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -700,6 +854,13 @@
             transition: 'color 0.15s ease, background 0.15s ease'
           }, { title: '删除' })
           deleteBtn.innerHTML = self._icons.clear
+          // 动态设置小按钮中 SVG 图标尺寸
+          const deleteSvg = deleteBtn.querySelector('svg')
+          if (deleteSvg) {
+            const smallIconSize = Math.round(sc.svgIconSize * 0.7)
+            deleteSvg.setAttribute('width', smallIconSize)
+            deleteSvg.setAttribute('height', smallIconSize)
+          }
           deleteBtn.addEventListener('mouseenter', () => { deleteBtn.style.color = '#ef4444'; deleteBtn.style.background = '#fef2f2' })
           deleteBtn.addEventListener('mouseleave', () => { deleteBtn.style.color = '#94a3b8'; deleteBtn.style.background = 'transparent' })
           deleteBtn.onclick = () => self._removeElement(el.id)
@@ -729,6 +890,7 @@
      */
     _populateHeaderButtons(btnGroup, infoEl) {
       const self = this
+      const sc = this._sizeConfig()
       btnGroup.innerHTML = ''
 
       const hasSelected = this._selectedElements.length > 0
@@ -748,11 +910,15 @@
       // 分隔线（始终显示）
       const divider = createElement('div', {
         width: '1px',
-        height: '16px',
+        height: sc.dividerHeight,
         background: 'rgba(255,255,255,0.3)',
         flexShrink: '0'
       })
       btnGroup.appendChild(divider)
+
+      // 历史记录按钮
+      const historyBtn = this._createIconButton('history', '复制历史', () => self._toggleHistoryOverlay())
+      btnGroup.appendChild(historyBtn)
 
       // 暂停/继续按钮
       const pauseBtn = this._createIconButton(
@@ -765,7 +931,7 @@
       // 关闭按钮分隔线（始终显示）
       const closeDivider = createElement('div', {
         width: '1px',
-        height: '16px',
+        height: sc.dividerHeight,
         background: 'rgba(255,255,255,0.3)',
         flexShrink: '0',
         marginLeft: '4px',
@@ -822,6 +988,7 @@
       this._hoverOverlay = null
       this._selectedOverlays = []
       this._panel = null
+      this._historyOverlay = null
     },
 
     _bindEvents() {
@@ -831,6 +998,10 @@
         if (!self._isActive) return
         if (self._isPaused) return
         if (self._isDragging) return
+        if (e.metaKey) {
+          self._hideHoverOverlay()
+          return
+        }
 
         const target = e.target
         const isPanel = target.closest && target.closest('[data-element-selector-panel]')
@@ -876,6 +1047,10 @@
       }
 
       this._handleKeyDown = (e) => {
+        // 按下 Cmd 键时隐藏高亮框（避免 Cmd+Tab 等操作时干扰）
+        if (e.key === 'Meta' && self._isActive) {
+          self._hideHoverOverlay()
+        }
         // ESC 关闭选择模式
         if (e.key === 'Escape' && self._isActive) {
           self.stop()
@@ -1219,6 +1394,7 @@
       text += formatElementInfo(el.info, el.id)
       navigator.clipboard.writeText(text).then(() => {
         self._showCopyFeedback('已复制！')
+        self._saveToHistory(text)
       })
     },
 
@@ -1266,6 +1442,7 @@
 
       navigator.clipboard.writeText(text.trimEnd()).then(() => {
         self._showCopyFeedback('已复制所有选择器！')
+        self._saveToHistory(text.trimEnd())
       })
     },
 
@@ -1302,6 +1479,68 @@
           : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
       }
       this._refreshPanel()
+    },
+
+    /**
+     * 应用新的面板尺寸预设（销毁并重建面板，恢复位置）
+     */
+    _applyPanelSize(newSize) {
+      this._panelSize = newSize
+      if (this._panel) {
+        // 记录当前面板位置
+        const left = this._panel.style.left
+        const top = this._panel.style.top
+        // 保存 prompt 输入内容
+        const promptInput = this._panel.querySelector('#es-prompt-input')
+        const promptValue = promptInput ? promptInput.value : ''
+        // 清理拖拽状态
+        if (this._isDragging) {
+          this._isDragging = false
+          if (this._handleDragMouseMove) {
+            document.removeEventListener('mousemove', this._handleDragMouseMove, true)
+            this._handleDragMouseMove = null
+          }
+          if (this._handleDragMouseUp) {
+            document.removeEventListener('mouseup', this._handleDragMouseUp, true)
+            this._handleDragMouseUp = null
+          }
+        }
+        // 销毁面板
+        this._panel.remove()
+        this._panel = null
+        // 重建面板
+        this._panel = this._createPanel()
+        if (this._container) {
+          this._container.appendChild(this._panel)
+        }
+        // 恢复位置（同时清除对向属性，避免 left/right、top/bottom 冲突）
+        if (left) {
+          this._panel.style.left = left
+          this._panel.style.right = 'auto'
+        }
+        if (top) {
+          this._panel.style.top = top
+          this._panel.style.bottom = 'auto'
+        }
+        // 恢复 prompt 输入内容
+        if (promptValue) {
+          const newPromptInput = this._panel.querySelector('#es-prompt-input')
+          if (newPromptInput) {
+            newPromptInput.value = promptValue
+            // 触发 input 事件以隐藏 placeholder
+            newPromptInput.dispatchEvent(new Event('input'))
+          }
+        }
+        // 恢复暂停状态的标题栏颜色
+        if (this._isPaused) {
+          const header = this._panel.querySelector('#es-panel-header')
+          if (header) {
+            header.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+          }
+        }
+        // 刷新面板内容
+        this._refreshPanel()
+      }
     },
 
     /**
@@ -1420,6 +1659,219 @@
       })
     },
 
+    // ==================== 历史记录相关方法 ====================
+
+    /**
+     * 保存复制内容到历史记录
+     */
+    _saveToHistory(content) {
+      if (!chrome || !chrome.storage || !chrome.storage.local) return
+      const summary = content.length > 50 ? content.substring(0, 50) + '...' : content
+      const record = {
+        content: content,
+        timestamp: Date.now(),
+        summary: summary
+      }
+      chrome.storage.local.get('copyHistory', (result) => {
+        const history = result.copyHistory || []
+        history.unshift(record)
+        // 最多保留5条
+        if (history.length > 5) history.length = 5
+        chrome.storage.local.set({ copyHistory: history })
+      })
+    },
+
+    /**
+     * 格式化相对时间
+     */
+    _formatRelativeTime(timestamp) {
+      const diff = Date.now() - timestamp
+      const seconds = Math.floor(diff / 1000)
+      if (seconds < 60) return '刚刚'
+      const minutes = Math.floor(seconds / 60)
+      if (minutes < 60) return minutes + ' 分钟前'
+      const hours = Math.floor(minutes / 60)
+      if (hours < 24) return hours + ' 小时前'
+      const days = Math.floor(hours / 24)
+      return days + ' 天前'
+    },
+
+    /**
+     * 切换历史记录浮层显示/隐藏
+     */
+    _toggleHistoryOverlay() {
+      if (this._historyOverlay) {
+        this._hideHistoryOverlay()
+      } else {
+        this._showHistoryOverlay()
+      }
+    },
+
+    /**
+     * 显示历史记录浮层
+     */
+    _showHistoryOverlay() {
+      if (!this._panel || this._historyOverlay) return
+      const self = this
+      const sc = this._sizeConfig()
+
+      const overlay = createElement('div', {
+        position: 'absolute',
+        top: '0',
+        left: '0',
+        right: '0',
+        bottom: '0',
+        background: '#1a1a2e',
+        zIndex: '10',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRadius: sc.panelBorderRadius,
+        overflow: 'hidden'
+      })
+
+      // 浮层标题栏
+      const header = createElement('div', {
+        background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+        color: '#fff',
+        padding: sc.headerPadding,
+        display: 'flex',
+        alignItems: 'center',
+        flexShrink: '0',
+        gap: sc.headerGap
+      })
+      const title = createElement('span', {
+        flex: '1',
+        fontSize: sc.selectedInfoFontSize,
+        fontWeight: '500'
+      }, { textContent: '复制历史' })
+      header.appendChild(title)
+
+      // 关闭浮层按钮
+      const closeBtn = this._createIconButton('close', '关闭历史', () => self._hideHistoryOverlay())
+      header.appendChild(closeBtn)
+      overlay.appendChild(header)
+
+      // 列表区域
+      const listContainer = createElement('div', {
+        flex: '1',
+        overflowY: 'auto',
+        padding: sc.contentPadding
+      })
+
+      // 从 storage 加载历史并渲染
+      chrome.storage.local.get('copyHistory', (result) => {
+        const history = result.copyHistory || []
+        if (history.length === 0) {
+          listContainer.innerHTML =
+            '<div style="color: #666; font-size: ' + sc.hintFontSize + '; display: flex; align-items: center; justify-content: center; height: 100%;">暂无历史记录</div>'
+        } else {
+          history.forEach((record, index) => {
+            const item = createElement('div', {
+              display: 'flex',
+              alignItems: 'center',
+              padding: '6px 8px',
+              marginBottom: '4px',
+              background: '#252540',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              transition: 'background 0.15s ease',
+              gap: '8px'
+            })
+            item.addEventListener('mouseenter', () => { item.style.background = '#2d2d50' })
+            item.addEventListener('mouseleave', () => { item.style.background = '#252540' })
+
+            // 左侧内容区
+            const infoArea = createElement('div', {
+              flex: '1',
+              minWidth: '0',
+              overflow: 'hidden'
+            })
+            // 时间
+            const timeEl = createElement('div', {
+              fontSize: '10px',
+              color: '#8888aa',
+              marginBottom: '2px'
+            }, { textContent: self._formatRelativeTime(record.timestamp) })
+            infoArea.appendChild(timeEl)
+            // 摘要
+            const summaryEl = createElement('div', {
+              fontSize: sc.labelElFontSize,
+              color: '#ccc',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }, { textContent: record.summary })
+            infoArea.appendChild(summaryEl)
+
+            // 点击复制
+            infoArea.onclick = () => {
+              navigator.clipboard.writeText(record.content).then(() => {
+                summaryEl.textContent = '已复制!'
+                summaryEl.style.color = '#22c55e'
+                setTimeout(() => {
+                  summaryEl.textContent = record.summary
+                  summaryEl.style.color = '#ccc'
+                }, 1000)
+              })
+            }
+            item.appendChild(infoArea)
+
+            // 删除按钮
+            const delBtn = createElement('button', {
+              background: 'transparent',
+              border: 'none',
+              color: '#666',
+              cursor: 'pointer',
+              padding: '4px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: '0',
+              transition: 'color 0.15s ease'
+            }, { title: '删除' })
+            delBtn.innerHTML = self._icons.close
+            const delSvg = delBtn.querySelector('svg')
+            if (delSvg) {
+              delSvg.setAttribute('width', 14)
+              delSvg.setAttribute('height', 14)
+            }
+            delBtn.addEventListener('mouseenter', () => { delBtn.style.color = '#ef4444' })
+            delBtn.addEventListener('mouseleave', () => { delBtn.style.color = '#666' })
+            delBtn.onclick = (e) => {
+              e.stopPropagation()
+              chrome.storage.local.get('copyHistory', (res) => {
+                const h = res.copyHistory || []
+                h.splice(index, 1)
+                chrome.storage.local.set({ copyHistory: h }, () => {
+                  // 重新渲染浮层
+                  self._hideHistoryOverlay()
+                  self._showHistoryOverlay()
+                })
+              })
+            }
+            item.appendChild(delBtn)
+
+            listContainer.appendChild(item)
+          })
+        }
+      })
+
+      overlay.appendChild(listContainer)
+      this._panel.appendChild(overlay)
+      this._historyOverlay = overlay
+    },
+
+    /**
+     * 隐藏历史记录浮层
+     */
+    _hideHistoryOverlay() {
+      if (this._historyOverlay) {
+        this._historyOverlay.remove()
+        this._historyOverlay = null
+      }
+    },
+
     _notifyStateChange() {
       // 发送消息给 background script（检查 runtime 是否存在）
       if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
@@ -1467,9 +1919,10 @@
   }
 
   try {
-    chrome.storage.sync.get(['customShortcut', 'devMode'], (result) => {
+    chrome.storage.sync.get(['customShortcut', 'devMode', 'panelSize'], (result) => {
       _customShortcut = result.customShortcut || null
       ElementSelector._devMode = !!result.devMode
+      ElementSelector._panelSize = result.panelSize || 'small'
     })
 
     chrome.storage.onChanged.addListener((changes) => {
@@ -1478,6 +1931,9 @@
       }
       if ('devMode' in changes) {
         ElementSelector._devMode = !!changes.devMode.newValue
+      }
+      if ('panelSize' in changes) {
+        ElementSelector._applyPanelSize(changes.panelSize.newValue || 'small')
       }
     })
 

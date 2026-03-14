@@ -22,6 +22,27 @@ const msgEl = document.getElementById('msgEl')
 const existingList = document.getElementById('existingList')
 const devModeToggle = document.getElementById('devModeToggle')
 
+// 面板尺寸选择器
+const sizeSelector = document.getElementById('sizeSelector')
+const sizeBtns = sizeSelector.querySelectorAll('.size-btn')
+
+// 初始化面板尺寸
+chrome.storage.sync.get(['panelSize'], (result) => {
+  const size = result.panelSize || 'small'
+  sizeBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.size === size)
+  })
+})
+
+// 点击切换面板尺寸并保存
+sizeBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    sizeBtns.forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    chrome.storage.sync.set({ panelSize: btn.dataset.size })
+  })
+})
+
 // 初始化开发者模式
 chrome.storage.sync.get(['devMode'], (result) => {
   devModeToggle.checked = !!result.devMode

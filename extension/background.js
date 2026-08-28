@@ -6,6 +6,9 @@
 // 存储每个标签页的状态
 const tabStates = new Map()
 
+// 1.2.54 起当前选择只在 content script 内存中存在；清理旧版本遗留的会话数据。
+chrome.storage.session.remove('elementSelectorData').catch(() => {})
+
 // 监听来自 popup 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TOGGLE_SELECTOR') {
@@ -40,6 +43,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       frameId: sender.frameId || 0,
       topUrl: sender.tab.url || message.frameUrl
     })
+  } else if (message.type === 'SELECTIONS_CHANGED' && sender.tab) {
+    const data = message.data
+    // 仅在当前打开期间向所有 frame 同步，不持久化当前选择。
+    chrome.tabs.sendMessage(sender.tab.id, {
+      type: 'SYNC_SELECTIONS',
+      data: data
+    }).catch(() => {})
+    sendResponse({ success: true })
   } else if (message.type === 'BROADCAST_SELECTOR_COMMAND' && sender.tab) {
     chrome.tabs.sendMessage(sender.tab.id, { type: message.command }).catch(() => {})
   }

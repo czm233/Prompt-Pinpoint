@@ -33,6 +33,7 @@
       iconBtnPadding: '6px',
       svgIconSize: 20,
       selectedInfoFontSize: '13px',
+      selectedInfoMarginLeft: '2px',
       copyBarHeight: '44px',
       copyBarFontSize: '13px',
       contentPadding: '4px 6px',
@@ -60,6 +61,7 @@
       iconBtnPadding: '8px',
       svgIconSize: 24,
       selectedInfoFontSize: '15px',
+      selectedInfoMarginLeft: '4px',
       copyBarHeight: '52px',
       copyBarFontSize: '15px',
       contentPadding: '6px 8px',
@@ -87,6 +89,7 @@
       iconBtnPadding: '10px',
       svgIconSize: 28,
       selectedInfoFontSize: '17px',
+      selectedInfoMarginLeft: '6px',
       copyBarHeight: '62px',
       copyBarFontSize: '17px',
       contentPadding: '8px 12px',
@@ -379,6 +382,9 @@
     _panelStartY: 0,
     _handleDragMouseMove: null,
     _handleDragMouseUp: null,
+    _handleDragPointerCancel: null,
+    _dragHandle: null,
+    _dragPointerId: null,
 
     // 拖拽结束后防止 click 误触发
     _wasDragging: false,
@@ -402,14 +408,14 @@
      */
     start() {
       if (this._isActive) return
+      // 每次打开都是一次新的选择会话；复制历史使用独立 storage.local，不受影响。
+      this._resetState()
       this._isActive = true
       this._isPaused = false
       this._createUI()
       this._bindEvents()
       document.body.style.cursor = 'crosshair'
       this._notifyStateChange()
-      // 从 storage 加载已有选择
-      this._loadFromStorage()
       console.log('ElementSelector 已启动')
     },
 
@@ -454,6 +460,7 @@
     _resetState() {
       this._selectedElements = []
       this._hoveredElement = null
+      this._nextId = 1
     },
 
     _sizeConfig() {
@@ -577,19 +584,24 @@
         flexShrink: '0',
         cursor: self._devMode ? 'default' : 'grab',
         userSelect: 'none',
+        touchAction: 'none',
         gap: sc.headerGap
       }, { id: 'es-panel-header' })
 
       // 左侧：已选择元素信息（利用剩余空间）
       const selectedInfo = createElement('span', {
-        flex: '1',
+        flex: '0 0 ' + sc.labelElMinWidth,
+        width: sc.labelElMinWidth,
+        minWidth: sc.labelElMinWidth,
+        marginLeft: sc.selectedInfoMarginLeft,
         fontSize: sc.selectedInfoFontSize,
         fontWeight: '500',
         color: 'rgba(255,255,255,0.9)',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
-        minWidth: '0'
+        textAlign: 'center',
+        boxSizing: 'border-box'
       }, { id: 'es-selected-info', textContent: '0' })
       header.appendChild(selectedInfo)
 
@@ -598,13 +610,15 @@
         display: 'flex',
         alignItems: 'center',
         gap: '2px',
-        flexShrink: '0'
+        flexShrink: '0',
+        marginLeft: 'auto'
       }, { id: 'es-header-buttons' })
       header.appendChild(btnGroup)
 
       // 绑定拖拽事件（开发者模式下禁用，避免与元素选择冲突）
-      header.addEventListener('mousedown', (e) => {
+      header.addEventListener('pointerdown', (e) => {
         if (self._devMode) return
+        if (e.button !== 0) return
         if (e.target.closest('button')) return
         self._startDrag(e)
       })
@@ -626,7 +640,9 @@
         padding: sc.contentPadding,
         flex: '1',
         minHeight: '0',
-        overflowY: 'auto'
+        overflowY: 'auto',
+        // 始终预留滚动条槽位，避免列表达到滚动阈值时卡片宽度和按钮间距跳变。
+        scrollbarGutter: 'stable'
       }, { id: 'es-panel-content' })
       this._updatePanelContent(content)
       middleRow.appendChild(content)
@@ -905,32 +921,36 @@
       const sc = this._sizeConfig()
       btnGroup.innerHTML = ''
 
-      const hasSelected = this._selectedElements.length > 0
       const urls = new Set(this._selectedElements.map(el => el.url))
       const hasMultiplePages = urls.size > 1
 
+      const appendDivider = () => {
+        btnGroup.appendChild(createElement('div', {
+          width: '1px',
+          height: sc.dividerHeight,
+          background: 'rgba(255,255,255,0.3)',
+          flexShrink: '0'
+        }, { 'data-element-selector-divider': 'true' }))
+      }
+
+      const appendButton = (button) => {
+        if (btnGroup.children.length > 0) appendDivider()
+        btnGroup.appendChild(button)
+      }
+
       // 清除按钮（始终显示）
       const clearBtn = this._createIconButton('clear', hasMultiplePages ? '清除本页' : '清除选择', () => self._clearSelection())
-      btnGroup.appendChild(clearBtn)
+      appendButton(clearBtn)
 
       // 清除所有按钮（多页面时显示）
       if (hasMultiplePages) {
         const clearAllBtn = this._createIconButton('clearAll', '清除所有', () => self._clearAllSelections())
-        btnGroup.appendChild(clearAllBtn)
+        appendButton(clearAllBtn)
       }
-
-      // 分隔线（始终显示）
-      const divider = createElement('div', {
-        width: '1px',
-        height: sc.dividerHeight,
-        background: 'rgba(255,255,255,0.3)',
-        flexShrink: '0'
-      })
-      btnGroup.appendChild(divider)
 
       // 历史记录按钮
       const historyBtn = this._createIconButton('history', '复制历史', () => self._toggleHistoryOverlay())
-      btnGroup.appendChild(historyBtn)
+      appendButton(historyBtn)
 
       // 暂停/继续按钮
       const pauseBtn = this._createIconButton(
@@ -938,22 +958,11 @@
         this._isPaused ? '继续选择' : '暂停选择',
         () => self._togglePause()
       )
-      btnGroup.appendChild(pauseBtn)
-
-      // 关闭按钮分隔线（始终显示）
-      const closeDivider = createElement('div', {
-        width: '1px',
-        height: sc.dividerHeight,
-        background: 'rgba(255,255,255,0.3)',
-        flexShrink: '0',
-        marginLeft: '4px',
-        marginRight: '4px'
-      })
-      btnGroup.appendChild(closeDivider)
+      appendButton(pauseBtn)
 
       // 关闭按钮
       const closeBtn = this._createIconButton('close', '关闭', () => self._broadcastCommand('STOP'))
-      btnGroup.appendChild(closeBtn)
+      appendButton(closeBtn)
 
       // 更新选择信息
       if (infoEl) {
@@ -966,31 +975,30 @@
      */
     _updateSelectedInfoEl(infoEl) {
       const count = this._selectedElements.length
-      if (count === 0) {
-        infoEl.textContent = this._isPaused ? '已暂停' : '0'
-      } else {
-        const urls = new Set(this._selectedElements.map(el => el.url))
-        let text = '' + count
-        if (urls.size > 1) {
-          text += '（' + urls.size + ' 个页面）'
-        }
-        if (this._isPaused) {
-          text += ' | 已暂停'
-        }
-        infoEl.textContent = text
-      }
+      const urls = new Set(this._selectedElements.map(el => el.url))
+      infoEl.textContent = String(Math.min(count, 99))
+
+      let title = '已选择 ' + count + ' 个元素'
+      if (urls.size > 1) title += '（' + urls.size + ' 个页面）'
+      if (this._isPaused) title += ' | 已暂停'
+      infoEl.title = title
     },
 
     _removeUI() {
       // 清理拖拽事件
       if (this._handleDragMouseMove) {
-        document.removeEventListener('mousemove', this._handleDragMouseMove, true)
+        document.removeEventListener('pointermove', this._handleDragMouseMove, true)
         this._handleDragMouseMove = null
       }
       if (this._handleDragMouseUp) {
-        document.removeEventListener('mouseup', this._handleDragMouseUp, true)
+        document.removeEventListener('pointerup', this._handleDragMouseUp, true)
         this._handleDragMouseUp = null
       }
+      if (this._handleDragPointerCancel) {
+        document.removeEventListener('pointercancel', this._handleDragPointerCancel, true)
+        this._handleDragPointerCancel = null
+      }
+      this._releaseDragPointer()
       this._isDragging = false
 
       if (this._container) {
@@ -1243,7 +1251,7 @@
       this._updateSelectedOverlays()
       this._refreshPanel()
       this._notifyStateChange()
-      this._saveToStorage()
+      this._broadcastSelections()
     },
 
     _removeElement(id) {
@@ -1252,7 +1260,7 @@
       this._updateSelectedOverlays()
       this._refreshPanel()
       this._notifyStateChange()
-      this._saveToStorage()
+      this._broadcastSelections()
     },
 
     _refreshPanel() {
@@ -1276,6 +1284,13 @@
       if (!this._panel) return
       const self = this
       this._isDragging = true
+      this._dragHandle = e.currentTarget
+      this._dragPointerId = e.pointerId
+
+      // 捕获指针后，即使快速移出面板或经过 iframe，也会继续收到移动与松开事件。
+      if (this._dragHandle && this._dragHandle.setPointerCapture) {
+        try { this._dragHandle.setPointerCapture(this._dragPointerId) } catch (error) {}
+      }
 
       // 记录鼠标起始位置
       this._dragStartX = e.clientX
@@ -1296,15 +1311,19 @@
       const header = this._panel.firstChild
       if (header) header.style.cursor = 'grabbing'
 
-      // 绑定 document 级别的 mousemove 和 mouseup
+      // 捕获后的 pointer 事件仍会冒泡到 document，在这里统一处理和清理。
       this._handleDragMouseMove = (e) => {
         self._onDrag(e)
       }
       this._handleDragMouseUp = (e) => {
         self._stopDrag(e)
       }
-      document.addEventListener('mousemove', this._handleDragMouseMove, true)
-      document.addEventListener('mouseup', this._handleDragMouseUp, true)
+      this._handleDragPointerCancel = (e) => {
+        self._stopDrag(e)
+      }
+      document.addEventListener('pointermove', this._handleDragMouseMove, true)
+      document.addEventListener('pointerup', this._handleDragMouseUp, true)
+      document.addEventListener('pointercancel', this._handleDragPointerCancel, true)
 
       // 阻止传播，避免触发元素选择逻辑
       e.preventDefault()
@@ -1316,6 +1335,7 @@
      */
     _onDrag(e) {
       if (!this._isDragging || !this._panel) return
+      if (e.pointerId !== this._dragPointerId) return
 
       // 计算偏移量
       const deltaX = e.clientX - this._dragStartX
@@ -1351,6 +1371,7 @@
      */
     _stopDrag(e) {
       if (!this._isDragging) return
+      if (typeof e.pointerId === 'number' && e.pointerId !== this._dragPointerId) return
 
       // 标记拖拽刚结束，防止 click 误触发
       this._wasDragging = true
@@ -1361,19 +1382,37 @@
       const header = this._panel ? this._panel.firstChild : null
       if (header) header.style.cursor = 'grab'
 
+      this._releaseDragPointer()
+
       // 清除 document 级别的事件监听
       if (this._handleDragMouseMove) {
-        document.removeEventListener('mousemove', this._handleDragMouseMove, true)
+        document.removeEventListener('pointermove', this._handleDragMouseMove, true)
         this._handleDragMouseMove = null
       }
       if (this._handleDragMouseUp) {
-        document.removeEventListener('mouseup', this._handleDragMouseUp, true)
+        document.removeEventListener('pointerup', this._handleDragMouseUp, true)
         this._handleDragMouseUp = null
+      }
+      if (this._handleDragPointerCancel) {
+        document.removeEventListener('pointercancel', this._handleDragPointerCancel, true)
+        this._handleDragPointerCancel = null
       }
 
       // 阻止传播
       e.preventDefault()
       e.stopPropagation()
+    },
+
+    _releaseDragPointer() {
+      if (this._dragHandle && this._dragHandle.releasePointerCapture && this._dragPointerId !== null) {
+        try {
+          if (!this._dragHandle.hasPointerCapture || this._dragHandle.hasPointerCapture(this._dragPointerId)) {
+            this._dragHandle.releasePointerCapture(this._dragPointerId)
+          }
+        } catch (error) {}
+      }
+      this._dragHandle = null
+      this._dragPointerId = null
     },
 
     _clearSelection() {
@@ -1383,7 +1422,7 @@
       this._updateSelectedOverlays()
       this._refreshPanel()
       this._notifyStateChange()
-      this._saveToStorage()
+      this._broadcastSelections()
     },
 
     _clearAllSelections() {
@@ -1393,7 +1432,7 @@
       this._updateSelectedOverlays()
       this._refreshPanel()
       this._notifyStateChange()
-      this._saveToStorage()
+      this._broadcastSelections()
     },
 
     _getPromptText() {
@@ -1534,13 +1573,18 @@
         if (this._isDragging) {
           this._isDragging = false
           if (this._handleDragMouseMove) {
-            document.removeEventListener('mousemove', this._handleDragMouseMove, true)
+            document.removeEventListener('pointermove', this._handleDragMouseMove, true)
             this._handleDragMouseMove = null
           }
           if (this._handleDragMouseUp) {
-            document.removeEventListener('mouseup', this._handleDragMouseUp, true)
+            document.removeEventListener('pointerup', this._handleDragMouseUp, true)
             this._handleDragMouseUp = null
           }
+          if (this._handleDragPointerCancel) {
+            document.removeEventListener('pointercancel', this._handleDragPointerCancel, true)
+            this._handleDragPointerCancel = null
+          }
+          this._releaseDragPointer()
         }
         // 销毁面板
         this._panel.remove()
@@ -1598,7 +1642,7 @@
 
       this._updateSelectedOverlays()
       this._refreshPanel()
-      this._saveToStorage()
+      this._broadcastSelections()
     },
 
     /**
@@ -1626,10 +1670,10 @@
     },
 
     /**
-     * 保存选择数据到 chrome.storage.session
+     * 通过 background 向顶层页面和其他 frame 即时广播当前选择。
+     * 当前选择不落盘，关闭后自然清空；复制历史仍单独保存在 storage.local。
      */
-    _saveToStorage() {
-      if (!chrome || !chrome.storage || !chrome.storage.session) return
+    _broadcastSelections() {
       const data = {
         selections: this._selectedElements.map(el => ({
           id: el.id,
@@ -1642,25 +1686,12 @@
         nextId: this._nextId,
         isActive: this._isActive
       }
-      chrome.storage.session.set({ elementSelectorData: data })
-    },
-
-    /**
-     * 从 chrome.storage.session 加载选择数据
-     */
-    _loadFromStorage() {
-      if (!chrome || !chrome.storage || !chrome.storage.session) return
-      const self = this
-      chrome.storage.session.get('elementSelectorData', (result) => {
-        if (!result || !result.elementSelectorData) return
-        const data = result.elementSelectorData
-        // 恢复 nextId
-        if (data.nextId && data.nextId > self._nextId) {
-          self._nextId = data.nextId
-        }
-
-        self._syncSelections(data)
-      })
+      try {
+        chrome.runtime.sendMessage({
+          type: 'SELECTIONS_CHANGED',
+          data: data
+        })
+      } catch (e) {}
     },
 
     _syncSelections(data) {
@@ -1938,6 +1969,11 @@
       } else if (message.type === 'RESUME') {
         ElementSelector._setPaused(false)
         sendResponse({ success: true })
+      } else if (message.type === 'SYNC_SELECTIONS') {
+        if (ElementSelector._isActive) {
+          ElementSelector._syncSelections(message.data || {})
+        }
+        sendResponse({ success: true })
       } else if (message.type === 'PING') {
         // 响应 PING，表示 content script 已加载
         sendResponse({ success: true, loaded: true })
@@ -1979,9 +2015,6 @@
     })
 
     chrome.storage.onChanged.addListener((changes) => {
-      if ('elementSelectorData' in changes && ElementSelector._isActive) {
-        ElementSelector._syncSelections(changes.elementSelectorData.newValue || {})
-      }
       if ('customShortcut' in changes) {
         _customShortcut = changes.customShortcut.newValue || null
       }

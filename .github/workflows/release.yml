@@ -1,0 +1,84 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Package and release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate extension and version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          manifest_version="$(node -p "require('./extension/manifest.json').version")"
+          expected_tag="v${manifest_version}"
+
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match manifest version ${manifest_version}."
+            exit 1
+          fi
+
+          node --check extension/background.js
+          node --check extension/content.js
+          node --check extension/options.js
+          node --check extension/popup.js
+
+      - name: Build release package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_name="Prompt-Pinpoint-${GITHUB_REF_NAME}"
+          package_dir="dist/package"
+
+          mkdir -p "${package_dir}/icons"
+          cp extension/manifest.json "${package_dir}/"
+          cp extension/background.js "${package_dir}/"
+          cp extension/content.js "${package_dir}/"
+          cp extension/options.html "${package_dir}/"
+          cp extension/options.js "${package_dir}/"
+          cp extension/popup.html "${package_dir}/"
+          cp extension/popup.js "${package_dir}/"
+          cp extension/styles.css "${package_dir}/"
+          cp extension/icons/*.png "${package_dir}/icons/"
+
+          (
+            cd "${package_dir}"
+            zip -r "../${release_name}.zip" . -x '*.DS_Store'
+          )
+
+          rm -rf "${package_dir}"
+          (
+            cd dist
+            sha256sum "${release_name}.zip" > "${release_name}.zip.sha256"
+          )
+
+          unzip -l "dist/${release_name}.zip"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_name="Prompt-Pinpoint-${GITHUB_REF_NAME}"
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/${release_name}.zip" \
+            "dist/${release_name}.zip.sha256" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            --title "${GITHUB_REF_NAME}"

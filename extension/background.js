@@ -35,6 +35,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       [`active_${sender.tab.id}`]: message.isActive,
       [`count_${sender.tab.id}`]: message.count
     })
+  } else if (message.type === 'GET_FRAME_CONTEXT' && sender.tab) {
+    sendResponse({
+      frameId: sender.frameId || 0,
+      topUrl: sender.tab.url || message.frameUrl
+    })
+  } else if (message.type === 'BROADCAST_SELECTOR_COMMAND' && sender.tab) {
+    chrome.tabs.sendMessage(sender.tab.id, { type: message.command }).catch(() => {})
   }
   return true
 })
@@ -65,14 +72,15 @@ async function toggleSelector(tabId) {
 // 确保 content script 已注入
 async function ensureContentScriptInjected(tabId) {
   try {
-    // 尝试发送一个 ping 消息，检查 content script 是否已加载
-    await chrome.tabs.sendMessage(tabId, { type: 'PING' })
-  } catch (error) {
-    // 如果没有加载，则注入 content script
+    // 对所有 frame 注入；content.js 自带重复加载保护。
+    // 这样扩展更新前已经打开的页面，其跨域 iframe 也能立即获得选择能力。
     await chrome.scripting.executeScript({
-      target: { tabId },
+      target: { tabId, allFrames: true },
       files: ['content.js']
     })
+  } catch (error) {
+    // 页面可能不允许脚本注入（例如 chrome:// 页面），交给调用方处理。
+    throw error
   }
 }
 

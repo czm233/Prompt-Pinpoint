@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ElementSelector",
-  "version": "1.2.52",
+  "version": "1.2.53",
   "description": "页面元素选择器 - 让非程序员也能精确描述 UI 元素",
   "permissions": ["activeTab", "scripting", "storage"],
   "options_page": "options.html",
@@ -9,7 +9,10 @@
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
     }
   ],
   "action": {

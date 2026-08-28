@@ -13,6 +13,8 @@
 ;(function() {
   'use strict'
 
+  const IS_TOP_FRAME = window === window.top
+
   // 防止重复加载
   if (window.__ElementSelectorExtension) {
     return
@@ -290,6 +292,11 @@
     // 选择器
     lines.push('  选择器: ' + info.selector)
 
+    // iframe 内的选择器需要先定位 frame，再在 frame 文档内查询
+    if (info.frame) {
+      lines.push('  iframe: ' + info.frame.url + ' (frameId=' + info.frame.id + ')')
+    }
+
     // 属性
     if (info.attrs.length > 0) {
       lines.push('  属性: ' + info.attrs.join(' | '))
@@ -354,6 +361,9 @@
     _selectedElements: [],
     _hoveredElement: null,
     _nextId: 1, // 用于生成唯一 ID（编号不再回收）
+    _frameId: 0,
+    _topUrl: window.location.href,
+    _isTopFrame: IS_TOP_FRAME,
 
     // DOM 元素引用
     _container: null,
@@ -475,8 +485,10 @@
       this._container.appendChild(this._hoverOverlay)
 
       // 创建浮动面板
-      this._panel = this._createPanel()
-      this._container.appendChild(this._panel)
+      if (this._isTopFrame) {
+        this._panel = this._createPanel()
+        this._container.appendChild(this._panel)
+      }
 
       document.body.appendChild(this._container)
     },
@@ -940,7 +952,7 @@
       btnGroup.appendChild(closeDivider)
 
       // 关闭按钮
-      const closeBtn = this._createIconButton('close', '关闭', () => self.stop())
+      const closeBtn = this._createIconButton('close', '关闭', () => self._broadcastCommand('STOP'))
       btnGroup.appendChild(closeBtn)
 
       // 更新选择信息
@@ -1053,7 +1065,7 @@
         }
         // ESC 关闭选择模式
         if (e.key === 'Escape' && self._isActive) {
-          self.stop()
+          self._broadcastCommand('STOP')
         }
       }
 
@@ -1204,7 +1216,13 @@
 
     _selectElement(target) {
       const info = collectElementInfo(target)
-      const existingIndex = this._selectedElements.findIndex(el => el.selector === info.selector && el.url === window.location.href)
+      if (!this._isTopFrame) {
+        info.frame = { url: window.location.href, id: this._frameId }
+      }
+      const existingIndex = this._selectedElements.findIndex(el =>
+        el.selector === info.selector &&
+        (typeof el.frameId === 'number' ? el.frameId : 0) === this._frameId
+      )
 
       if (existingIndex !== -1) {
         // 取消选中
@@ -1216,7 +1234,9 @@
           selector: info.selector,
           element: target,
           info: info,
-          url: window.location.href
+          url: this._topUrl,
+          frameUrl: window.location.href,
+          frameId: this._frameId
         })
       }
 
@@ -1464,7 +1484,15 @@
      * 切换暂停/继续状态
      */
     _togglePause() {
-      this._isPaused = !this._isPaused
+      if (this._isTopFrame) {
+        this._broadcastCommand(this._isPaused ? 'RESUME' : 'PAUSE')
+        return
+      }
+      this._setPaused(!this._isPaused)
+    },
+
+    _setPaused(paused) {
+      this._isPaused = paused
       if (this._isPaused) {
         document.body.style.cursor = ''
         this._hideHoverOverlay()
@@ -1479,6 +1507,15 @@
           : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
       }
       this._refreshPanel()
+    },
+
+    _broadcastCommand(command) {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'BROADCAST_SELECTOR_COMMAND',
+          command: command
+        })
+      } catch (e) {}
     },
 
     /**
@@ -1554,7 +1591,7 @@
 
       // 旧页面的元素清空 DOM 引用
       this._selectedElements.forEach(el => {
-        if (el.url === oldUrl) {
+        if (el.frameUrl === oldUrl) {
           el.element = null
         }
       })
@@ -1569,10 +1606,10 @@
      * 由轮询定时器调用，处理 SPA 渲染延迟的情况
      */
     _tryRebindElements() {
-      const currentUrl = window.location.href
       let changed = false
       this._selectedElements.forEach(el => {
-        if (el.url === currentUrl && !el.element) {
+        const itemFrameId = typeof el.frameId === 'number' ? el.frameId : 0
+        if (itemFrameId === this._frameId && el.frameUrl === window.location.href && !el.element) {
           try {
             const dom = document.querySelector(el.selector)
             if (dom) {
@@ -1597,6 +1634,8 @@
         selections: this._selectedElements.map(el => ({
           id: el.id,
           url: el.url || window.location.href,
+          frameUrl: el.frameUrl || window.location.href,
+          frameId: typeof el.frameId === 'number' ? el.frameId : 0,
           info: el.info,
           selector: el.selector
         })),
@@ -1615,48 +1654,40 @@
       chrome.storage.session.get('elementSelectorData', (result) => {
         if (!result || !result.elementSelectorData) return
         const data = result.elementSelectorData
-        const currentUrl = window.location.href
-
         // 恢复 nextId
         if (data.nextId && data.nextId > self._nextId) {
           self._nextId = data.nextId
         }
 
-        // 恢复选择数据
-        if (data.selections && data.selections.length > 0) {
-          data.selections.forEach((item) => {
-            // 检查是否已经在内存中（避免重复）
-            if (self._selectedElements.some(el => el.id === item.id)) return
-
-            const entry = {
-              id: item.id,
-              url: item.url,
-              info: item.info,
-              selector: item.selector,
-              element: null
-            }
-
-            // 当前页面的元素尝试重新找到 DOM
-            if (item.url === currentUrl) {
-              try {
-                const dom = document.querySelector(item.selector)
-                if (dom) {
-                  entry.element = dom
-                }
-              } catch (e) {
-                // 选择器无效，忽略
-              }
-            }
-
-            self._selectedElements.push(entry)
-          })
-
-          // 刷新 UI
-          self._updateSelectedOverlays()
-          self._refreshPanel()
-          self._notifyStateChange()
-        }
+        self._syncSelections(data)
       })
+    },
+
+    _syncSelections(data) {
+      const oldElements = this._selectedElements
+      const selections = data && Array.isArray(data.selections) ? data.selections : []
+      this._selectedElements = selections.map((item) => {
+        const frameId = typeof item.frameId === 'number' ? item.frameId : 0
+        const frameUrl = item.frameUrl || item.url
+        const old = oldElements.find(el => el.id === item.id)
+        const entry = {
+          id: item.id,
+          url: item.url,
+          frameUrl: frameUrl,
+          frameId: frameId,
+          info: item.info,
+          selector: item.selector,
+          element: old && old.element ? old.element : null
+        }
+        if (!entry.element && frameId === this._frameId && frameUrl === window.location.href) {
+          try { entry.element = document.querySelector(item.selector) } catch (e) {}
+        }
+        return entry
+      })
+      this._nextId = Math.max(data && data.nextId ? data.nextId : 1, this._nextId)
+      this._updateSelectedOverlays()
+      this._refreshPanel()
+      this._notifyStateChange()
     },
 
     // ==================== 历史记录相关方法 ====================
@@ -1873,6 +1904,7 @@
     },
 
     _notifyStateChange() {
+      if (!this._isTopFrame) return
       // 发送消息给 background script（检查 runtime 是否存在）
       if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
         try {
@@ -1894,6 +1926,18 @@
       if (message.type === 'TOGGLE') {
         ElementSelector.toggle()
         sendResponse({ success: true })
+      } else if (message.type === 'START') {
+        ElementSelector.start()
+        sendResponse({ success: true })
+      } else if (message.type === 'STOP') {
+        ElementSelector.stop()
+        sendResponse({ success: true })
+      } else if (message.type === 'PAUSE') {
+        ElementSelector._setPaused(true)
+        sendResponse({ success: true })
+      } else if (message.type === 'RESUME') {
+        ElementSelector._setPaused(false)
+        sendResponse({ success: true })
       } else if (message.type === 'PING') {
         // 响应 PING，表示 content script 已加载
         sendResponse({ success: true, loaded: true })
@@ -1906,6 +1950,15 @@
 
   // 挂载到全局（用于防止重复加载检测）
   window.__ElementSelectorExtension = ElementSelector
+
+  // 获取 background 提供的稳定 frameId 和顶层页面 URL（跨域 frame 不能直接读取 window.top.location）。
+  try {
+    chrome.runtime.sendMessage({ type: 'GET_FRAME_CONTEXT', frameUrl: window.location.href }, (context) => {
+      if (!context) return
+      ElementSelector._frameId = context.frameId || 0
+      ElementSelector._topUrl = context.topUrl || window.location.href
+    })
+  } catch (e) {}
 
   // 全局自定义快捷键监听（自动注入后立即生效，无需先激活选择器）
   let _customShortcut = null
@@ -1926,6 +1979,9 @@
     })
 
     chrome.storage.onChanged.addListener((changes) => {
+      if ('elementSelectorData' in changes && ElementSelector._isActive) {
+        ElementSelector._syncSelections(changes.elementSelectorData.newValue || {})
+      }
       if ('customShortcut' in changes) {
         _customShortcut = changes.customShortcut.newValue || null
       }
@@ -1942,7 +1998,7 @@
       if (_matchesShortcut(e, _customShortcut)) {
         e.preventDefault()
         e.stopPropagation()
-        ElementSelector.toggle()
+        ElementSelector._broadcastCommand('TOGGLE')
       }
     }, true)
   } catch (e) {

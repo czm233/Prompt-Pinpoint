@@ -13,8 +13,10 @@ chrome.storage.session.remove('elementSelectorData').catch(() => {})
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TOGGLE_SELECTOR') {
     toggleSelector(message.tabId)
+    sendResponse({ success: true })
+    return true
   }
-  return true
+  return false
 })
 
 // 监听扩展图标点击（直接启动/停止选择器）
@@ -35,6 +37,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // 保存到 storage
     chrome.storage.local.set({
+      elementSelectorActive: message.isActive,
       [`active_${sender.tab.id}`]: message.isActive,
       [`count_${sender.tab.id}`]: message.count
     })
@@ -46,13 +49,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'SELECTIONS_CHANGED' && sender.tab) {
     const data = message.data
     // 仅在当前打开期间向所有 frame 同步，不持久化当前选择。
-    chrome.tabs.sendMessage(sender.tab.id, {
+    broadcastToAllFrames(sender.tab.id, {
       type: 'SYNC_SELECTIONS',
       data: data
-    }).catch(() => {})
+    })
     sendResponse({ success: true })
   } else if (message.type === 'BROADCAST_SELECTOR_COMMAND' && sender.tab) {
-    chrome.tabs.sendMessage(sender.tab.id, { type: message.command }).catch(() => {})
+    broadcastToAllFrames(sender.tab.id, { type: message.command })
+    sendResponse({ success: true })
   }
   return true
 })
@@ -67,14 +71,30 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 })
 
+
+// 将控制与同步消息发送到顶层页面及所有 iframe。tabs.sendMessage 默认只发送到 frame 0，
+// 会导致嵌套 iframe 中的选择器没有收到 START/TOGGLE 等命令。
+async function broadcastToAllFrames(tabId, message) {
+  try {
+    const frames = await chrome.webNavigation.getAllFrames({ tabId })
+    const frameIds = (frames || []).map(frame => frame.frameId)
+    await Promise.all(frameIds.map(frameId =>
+      chrome.tabs.sendMessage(tabId, message, { frameId }).catch(() => {})
+    ))
+  } catch (error) {
+    // 页面导航或 chrome:// 页面可能暂时无法枚举 frame，至少尝试顶层 frame。
+    chrome.tabs.sendMessage(tabId, message).catch(() => {})
+  }
+}
+
 // 切换选择器
 async function toggleSelector(tabId) {
   try {
     // 先尝试注入 content script（如果还没有注入的话）
     await ensureContentScriptInjected(tabId)
 
-    // 发送切换消息给 content script
-    await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE' })
+    // 直接发送到所有 frame。不要只发给顶层 frame，否则 iframe 中的选择器不会启动。
+    await broadcastToAllFrames(tabId, { type: 'TOGGLE' })
   } catch (error) {
     console.error('切换选择器失败:', error)
   }
@@ -116,3 +136,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 })
 
 console.log('🎯 ElementSelector Background Service Worker 已启动')
+
+// 页面运行期间动态创建的 iframe（例如点击按钮后才出现的弹窗）需要单独注入。
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId === 0) return
+  const state = tabStates.get(details.tabId)
+  if (!state || !state.isActive) return
+  chrome.scripting.executeScript({
+    target: { tabId: details.tabId, frameIds: [details.frameId] },
+    files: ['content.js']
+  }).catch(() => {})
+  chrome.tabs.sendMessage(details.tabId, { type: 'START' }, { frameId: details.frameId }).catch(() => {})
+})

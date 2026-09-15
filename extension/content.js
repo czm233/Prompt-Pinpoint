@@ -1035,7 +1035,7 @@
 
         e.stopPropagation()
         self._hoveredElement = target
-        self._updateHoverOverlay(target.getBoundingClientRect())
+        self._updateHoverOverlay(target.getBoundingClientRect(), target)
       }
 
       this._handleClick = (e) => {
@@ -1125,14 +1125,27 @@
       }
     },
 
-    _updateHoverOverlay(rect) {
+    _updateHoverOverlay(rect, target) {
       if (!this._hoverOverlay) return
-      this._hoverOverlay.style.display = 'block'
-      this._hoverOverlay.style.zIndex = this._devMode ? '2147483648' : '2147483646'
-      this._hoverOverlay.style.left = rect.left + 'px'
-      this._hoverOverlay.style.top = rect.top + 'px'
-      this._hoverOverlay.style.width = rect.width + 'px'
-      this._hoverOverlay.style.height = rect.height + 'px'
+      const dialog = target && target.closest ? target.closest('dialog[open]') : null
+      const overlay = this._hoverOverlay
+      const currentRoot = overlay.parentElement
+      const root = dialog || this._container
+      if (root && currentRoot !== root) root.appendChild(overlay)
+      overlay.style.display = 'block'
+      overlay.style.zIndex = this._devMode ? '2147483648' : '2147483646'
+      if (dialog) {
+        const dialogRect = dialog.getBoundingClientRect()
+        overlay.style.position = 'absolute'
+        overlay.style.left = (rect.left - dialogRect.left + dialog.scrollLeft) + 'px'
+        overlay.style.top = (rect.top - dialogRect.top + dialog.scrollTop) + 'px'
+      } else {
+        overlay.style.position = 'fixed'
+        overlay.style.left = rect.left + 'px'
+        overlay.style.top = rect.top + 'px'
+      }
+      overlay.style.width = rect.width + 'px'
+      overlay.style.height = rect.height + 'px'
     },
 
     _hideHoverOverlay() {
@@ -1161,14 +1174,16 @@
         const color = colors[(el.id - 1) % colors.length]  // 颜色基于 ID，不是索引
         const label = '' + el.id  // 使用固定 ID
 
+        const dialog = el.element.closest ? el.element.closest('dialog[open]') : null
+        const dialogRect = dialog ? dialog.getBoundingClientRect() : null
         const overlay = createElement('div', {
-          position: 'fixed',
+          position: dialog ? 'absolute' : 'fixed',
           pointerEvents: 'none',
           border: '2px solid ' + color,
           background: color + '20',
           zIndex: self._devMode ? '2147483648' : '2147483645',
-          left: rect.left + 'px',
-          top: rect.top + 'px',
+          left: dialog ? (rect.left - dialogRect.left + dialog.scrollLeft) + 'px' : rect.left + 'px',
+          top: dialog ? (rect.top - dialogRect.top + dialog.scrollTop) + 'px' : rect.top + 'px',
           width: rect.width + 'px',
           height: rect.height + 'px'
         }, { 'data-element-selector-overlay': 'true' })
@@ -1215,7 +1230,9 @@
 
         overlay.appendChild(labelContainer)
 
-        if (self._container) {
+        if (dialog) {
+          dialog.appendChild(overlay)
+        } else if (self._container) {
           self._container.appendChild(overlay)
         }
         self._selectedOverlays.push(overlay)
@@ -2013,10 +2030,17 @@
       ElementSelector._devMode = !!result.devMode
       ElementSelector._panelSize = result.panelSize || 'small'
     })
+    chrome.storage.local.get(['elementSelectorActive'], (result) => {
+      if (result.elementSelectorActive && !ElementSelector._isActive) ElementSelector.start()
+    })
 
     chrome.storage.onChanged.addListener((changes) => {
       if ('customShortcut' in changes) {
         _customShortcut = changes.customShortcut.newValue || null
+      }
+      if ('elementSelectorActive' in changes) {
+        if (changes.elementSelectorActive.newValue && !ElementSelector._isActive) ElementSelector.start()
+        if (!changes.elementSelectorActive.newValue && ElementSelector._isActive) ElementSelector.stop()
       }
       if ('devMode' in changes) {
         ElementSelector._devMode = !!changes.devMode.newValue

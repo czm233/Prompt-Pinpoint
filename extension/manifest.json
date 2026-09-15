@@ -3,7 +3,7 @@
   "name": "ElementSelector",
   "version": "1.2.59",
   "description": "页面元素选择器 - 让非程序员也能精确描述 UI 元素",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "webNavigation"],
   "options_page": "options.html",
   "content_scripts": [
     {

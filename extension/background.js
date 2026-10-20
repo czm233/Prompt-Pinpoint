@@ -1,3 +1,5 @@
+importScripts('i18n.js')
+
 /**
  * ElementSelector Extension - Background Script (Service Worker)
  * 管理插件状态和处理消息转发
@@ -11,6 +13,15 @@ chrome.storage.session.remove('elementSelectorData').catch(() => {})
 
 // 监听来自 popup 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.target === 'screenshot-clipboard') return false
+  if (message.type === 'REFRESH_SCREENSHOT_SHORTCUTS') {
+    refreshScreenshotShortcuts().then(() => sendResponse({ ready: true }))
+    return true
+  }
+  if (message.type === 'CAPTURE_SCREENSHOT' && sender.tab) {
+    captureScreenshot(sender.tab).then(() => sendResponse({ done: true }))
+    return true
+  }
   if (message.type === 'TOGGLE_SELECTOR') {
     toggleSelector(message.tabId)
     sendResponse({ success: true })
@@ -28,6 +39,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // 监听来自 content script 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.target === 'screenshot-clipboard') return false
   if (message.type === 'STATE_CHANGED' && sender.tab) {
     // 更新标签页状态
     tabStates.set(sender.tab.id, {
@@ -71,6 +83,129 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 })
 
+// 扩展图标右键菜单保留为无需自定义快捷键的截图入口。
+chrome.runtime.onInstalled.addListener(async () => {
+  await PinpointI18n.ready
+  refreshScreenshotShortcuts().catch(() => {})
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'capture-screenshot',
+      title: PinpointI18n.t('截图并复制'),
+      contexts: ['action']
+    })
+  })
+})
+
+
+// 重新加载扩展及保存设置后，已打开的页面也要获得当前版本监听器。
+async function refreshScreenshotShortcuts() {
+  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })
+  await Promise.all(tabs.map(tab => chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true }, files: ['screenshot-shortcut.js']
+  }).catch(() => {})))
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && 'screenshotShortcut' in changes) refreshScreenshotShortcuts().catch(() => {})
+})
+chrome.permissions.onAdded.addListener(() => refreshScreenshotShortcuts().catch(() => {}))
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'capture-screenshot' && tab) captureScreenshot(tab)
+})
+
+let screenshotBusy = false
+let lastScreenshotAt = 0
+let clipboardJob = null
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.target !== 'screenshot-clipboard' || !clipboardJob ||
+      sender.url !== chrome.runtime.getURL('clipboard.html')) return false
+  if (message.type === 'READY') sendResponse({ dataUrl: clipboardJob.dataUrl })
+  if (message.type === 'RESULT') clipboardJob.resolve(message)
+  return false
+})
+
+async function copyScreenshot(tabId, dataUrl) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (image) => {
+        const blob = await (await fetch(image)).blob()
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        return true
+      },
+      args: [dataUrl]
+    })
+    if (results[0]?.result === true) return
+  } catch {
+    // HTTP、浏览器内置页或失焦页面通过有焦点的扩展窗口复制。
+  }
+  let copyWindow
+  let timeout
+  try {
+    const completion = new Promise(resolve => {
+      clipboardJob = { dataUrl, resolve }
+      timeout = setTimeout(() => resolve({ success: false, error: PinpointI18n.t('复制超时，请保持浏览器在前台重试') }), 10000)
+    })
+    copyWindow = await chrome.windows.create({
+      url: 'clipboard.html', type: 'popup', focused: true, width: 320, height: 160
+    })
+    const result = await completion
+    if (!result.success) throw new Error(result.error || PinpointI18n.t('剪贴板写入失败'))
+  } finally {
+    clearTimeout(timeout)
+    clipboardJob = null
+    if (copyWindow) await chrome.windows.remove(copyWindow.id).catch(() => {})
+  }
+}
+
+async function captureScreenshot(tab) {
+  // 防止长按快捷键并发写入剪贴板或超过 Chrome 截图频率限制。
+  if (screenshotBusy || Date.now() - lastScreenshotAt < 600) return
+  screenshotBusy = true
+  await PinpointI18n.ready
+  lastScreenshotAt = Date.now()
+  try {
+    const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId })
+    if (active?.id !== tab.id) throw new Error(PinpointI18n.t('当前标签页已切换，请重试'))
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['i18n.js', 'screenshot-feedback.js'] })
+      await chrome.tabs.sendMessage(tab.id, { type: 'PREPARE_SCREENSHOT' }, { frameId: 0 })
+    } catch {
+      // 浏览器内置页禁止注入，仍可截图并通过扩展图标反馈。
+    }
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+    const [afterCapture] = await chrome.tabs.query({ active: true, windowId: tab.windowId })
+    if (afterCapture?.id !== tab.id) throw new Error(PinpointI18n.t('当前标签页已切换，请重试'))
+    await copyScreenshot(tab.id, dataUrl)
+    await screenshotFeedback(tab.id, true, '', dataUrl)
+  } catch (error) {
+    await screenshotFeedback(tab.id, false, error.message).catch(() => {})
+  } finally {
+    screenshotBusy = false
+  }
+}
+
+async function screenshotFeedback(tabId, success, error = '', dataUrl) {
+  try {
+    const result = await chrome.tabs.sendMessage(tabId, {
+      type: 'SCREENSHOT_FEEDBACK', success, error, dataUrl
+    }, { frameId: 0 })
+    if (result?.shown) return
+  } catch {}
+
+  await chrome.action.setBadgeText({ tabId, text: success ? '✓' : '!' })
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: success ? '#16a34a' : '#dc2626' })
+  await chrome.action.setTitle({
+    tabId,
+    title: success ? PinpointI18n.t('截图已复制') : PinpointI18n.t('截图失败：{error}。请重新按截图快捷键重试。', { error })
+  })
+  setTimeout(() => {
+    chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {})
+    chrome.action.setTitle({ tabId, title: PinpointI18n.t('🎯 Prompt-Pinpoint（点击启动/停止）') }).catch(() => {})
+  }, 4000)
+}
+
 
 // 将控制与同步消息发送到顶层页面及所有 iframe。tabs.sendMessage 默认只发送到 frame 0，
 // 会导致嵌套 iframe 中的选择器没有收到 START/TOGGLE 等命令。
@@ -107,7 +242,7 @@ async function ensureContentScriptInjected(tabId) {
     // 这样扩展更新前已经打开的页面，其跨域 iframe 也能立即获得选择能力。
     await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
-      files: ['content.js']
+      files: ['i18n.js', 'content.js']
     })
   } catch (error) {
     // 页面可能不允许脚本注入（例如 chrome:// 页面），交给调用方处理。
@@ -144,7 +279,14 @@ chrome.webNavigation.onCommitted.addListener((details) => {
   if (!state || !state.isActive) return
   chrome.scripting.executeScript({
     target: { tabId: details.tabId, frameIds: [details.frameId] },
-    files: ['content.js']
+    files: ['i18n.js', 'content.js']
   }).catch(() => {})
   chrome.tabs.sendMessage(details.tabId, { type: 'START' }, { frameId: details.frameId }).catch(() => {})
 })
+
+async function updateLanguage() {
+  await chrome.contextMenus.update('capture-screenshot', { title: PinpointI18n.t('截图并复制') }).catch(() => {})
+  await chrome.action.setTitle({ title: PinpointI18n.t('🎯 Prompt-Pinpoint（点击启动/停止）') })
+}
+PinpointI18n.onChange(() => updateLanguage().catch(() => {}))
+PinpointI18n.ready.then(updateLanguage).catch(() => {})

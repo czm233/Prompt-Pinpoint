@@ -1,167 +1,142 @@
-/**
- * ElementSelector 选项页面脚本
- * 管理自定义快捷键的录制、冲突检测和保存
- */
-
+/** 快捷键在扩展设置内录制并保存。 */
 const isMac = navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac')
-
-// 当前正在录制/展示的快捷键
-let currentShortcut = null
-// 已保存的快捷键
-let savedShortcut = null
-// 从 chrome.commands 读取的内置快捷键
 let builtinShortcuts = []
-// 是否处于录制状态
-let isRecording = false
+let saving = false
+const editors = [
+  { key: 'screenshotShortcut', label: PinpointI18n.t('截图并复制'), prefix: 'screenshot' },
+  { key: 'customShortcut', label: PinpointI18n.t('自定义切换快捷键'), prefix: '' }
+].map(editor => ({
+  ...editor,
+  box: document.getElementById(editor.prefix ? 'screenshotShortcutBox' : 'shortcutBox'),
+  display: document.getElementById(editor.prefix ? 'screenshotShortcutDisplay' : 'shortcutDisplay'),
+  clear: document.getElementById(editor.prefix ? 'screenshotClearBtn' : 'clearBtn'),
+  save: document.getElementById(editor.prefix ? 'screenshotSaveBtn' : 'saveBtn'),
+  msg: document.getElementById(editor.prefix ? 'screenshotMsg' : 'msgEl'),
+  current: null, saved: null, recording: false
+}))
 
-const shortcutBox = document.getElementById('shortcutBox')
-const shortcutDisplay = document.getElementById('shortcutDisplay')
-const clearBtn = document.getElementById('clearBtn')
-const saveBtn = document.getElementById('saveBtn')
-const msgEl = document.getElementById('msgEl')
-const existingList = document.getElementById('existingList')
-const devModeToggle = document.getElementById('devModeToggle')
-
-// 面板尺寸选择器
-const sizeSelector = document.getElementById('sizeSelector')
-const sizeBtns = sizeSelector.querySelectorAll('.size-btn')
-
-// 初始化面板尺寸
-chrome.storage.sync.get(['panelSize'], (result) => {
-  const size = result.panelSize || 'small'
-  sizeBtns.forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.size === size)
+function showMessage(editor, text, type = 'hint') {
+  editor.msg.textContent = text
+  editor.msg.className = `msg msg-${type}`
+}
+function renderShortcut(editor) {
+  editor.display.textContent = editor.current ? formatShortcut(editor.current) : PinpointI18n.t('点击后按下快捷键...')
+  editor.display.className = editor.current ? '' : 'placeholder'
+  editor.box.classList.remove('recording')
+}
+function findConflict(shortcut, editor) {
+  return builtinShortcuts.find(item => shortcutsEqual(item.shortcut, shortcut))?.label ||
+    editors.find(other => other !== editor && shortcutsEqual(other.saved, shortcut))?.label
+}
+function renderExistingList() {
+  const list = document.getElementById('existingList')
+  list.replaceChildren()
+  for (const item of [...builtinShortcuts, ...editors.map(editor => ({ label: editor.label, shortcut: editor.saved }))]) {
+    const row = document.createElement('div')
+    row.className = 'existing-item'
+    const label = document.createElement('span')
+    label.textContent = item.label
+    const value = document.createElement('span')
+    value.className = `key-tag${item.shortcut ? '' : ' empty'}`
+    value.textContent = item.shortcut ? formatShortcut(item.shortcut) : PinpointI18n.t('未设置')
+    row.append(label, value)
+    list.append(row)
+  }
+}
+for (const editor of editors) {
+  editor.save.disabled = true
+  const start = () => {
+    editor.recording = true
+    editor.box.classList.add('recording')
+    editor.display.textContent = PinpointI18n.t('请按下快捷键组合...')
+  }
+  editor.box.addEventListener('click', () => { editor.box.focus(); start() })
+  editor.box.addEventListener('focus', start)
+  editor.box.addEventListener('blur', () => { editor.recording = false; renderShortcut(editor) })
+  editor.box.addEventListener('keydown', event => {
+    if (!editor.recording || saving) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.repeat || event.isComposing || ['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) return
+    if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+      showMessage(editor, PinpointI18n.t('必须包含至少一个修饰键'), 'hint')
+      return
+    }
+    editor.current = { key: event.code, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey, shift: event.shiftKey }
+    editor.recording = false
+    renderShortcut(editor)
+    const conflict = findConflict(editor.current, editor)
+    editor.box.classList.toggle('has-conflict', !!conflict)
+    showMessage(editor, conflict ? PinpointI18n.t('与“{name}”冲突', { name: conflict }) : '', conflict ? 'error' : 'hint')
   })
-})
-
-// 点击切换面板尺寸并保存
-sizeBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    sizeBtns.forEach(b => b.classList.remove('active'))
-    btn.classList.add('active')
-    chrome.storage.sync.set({ panelSize: btn.dataset.size })
+  editor.clear.addEventListener('click', () => {
+    if (saving) return
+    editor.current = null
+    editor.recording = false
+    editor.box.classList.remove('has-conflict')
+    renderShortcut(editor)
+    showMessage(editor, '')
   })
-})
+  editor.save.addEventListener('click', async () => {
+    if (saving) return
+    const shortcut = editor.current
+    if (shortcut && findConflict(shortcut, editor)) {
+      showMessage(editor, PinpointI18n.t('存在冲突，请重新设置'), 'error')
+      return
+    }
+    saving = true
+    editors.forEach(item => { item.save.disabled = true })
+    try {
+      // 必须直接由保存按钮的用户手势发起；activeTab 不覆盖页面内按键。
+      if (editor.key === 'screenshotShortcut' && shortcut) {
+        const granted = await chrome.permissions.request({ origins: ['<all_urls>'] })
+        if (!granted) {
+          showMessage(editor, PinpointI18n.t('未授权截图所需的网站权限，快捷键未保存'), 'error')
+          return
+        }
+      }
+      await chrome.storage.sync.set({ [editor.key]: shortcut })
+      if (editor.key === 'screenshotShortcut') {
+        await chrome.runtime.sendMessage({ type: 'REFRESH_SCREENSHOT_SHORTCUTS' })
+      }
+      editor.saved = shortcut
+      renderExistingList()
+      showMessage(editor, PinpointI18n.t('已保存'), 'success')
+    } catch (error) {
+      showMessage(editor, PinpointI18n.t('保存失败：{error}', { error: error.message }), 'error')
+    } finally {
+      saving = false
+      editors.forEach(item => { item.save.disabled = false })
+    }
+  })
+}
 
-// 初始化开发者模式
-chrome.storage.sync.get(['devMode'], (result) => {
-  devModeToggle.checked = !!result.devMode
-})
-devModeToggle.addEventListener('change', () => {
-  chrome.storage.sync.set({ devMode: devModeToggle.checked })
-})
-
-// 初始化：读取已保存快捷键 + 读取内置命令
 Promise.all([
-  new Promise(resolve => chrome.storage.sync.get(['customShortcut'], resolve)),
-  new Promise(resolve => chrome.commands.getAll(resolve))
-]).then(([storageResult, commands]) => {
-  // 读取自定义快捷键
-  if (storageResult.customShortcut) {
-    savedShortcut = storageResult.customShortcut
-    currentShortcut = savedShortcut
-    setDisplay(savedShortcut)
+  chrome.storage.sync.get(['customShortcut', 'screenshotShortcut']),
+  chrome.commands.getAll()
+]).then(([settings, commands]) => {
+  builtinShortcuts = commands.filter(command => command.shortcut).map(command => ({
+    label: command.name === 'toggle-selector' ? PinpointI18n.t('开启/关闭元素选择器') : command.description || command.name, shortcut: parseCommandShortcut(command.shortcut)
+  }))
+  for (const editor of editors) {
+    editor.current = editor.saved = settings[editor.key] || null
+    renderShortcut(editor)
+    editor.save.disabled = false
   }
-
-  // 读取内置命令快捷键
-  builtinShortcuts = commands
-    .filter(cmd => cmd.shortcut)
-    .map(cmd => ({
-      label: cmd.description || cmd.name,
-      shortcut: parseCommandShortcut(cmd.shortcut)
-    }))
-    .filter(item => item.shortcut)
-
   renderExistingList()
+}).catch(error => editors.forEach(editor => showMessage(editor, PinpointI18n.t('读取设置失败：{error}', { error: error.message }), 'error')))
+
+const sizeBtns = document.getElementById('sizeSelector').querySelectorAll('.size-btn')
+chrome.storage.sync.get(['panelSize'], result => {
+  sizeBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.size === (result.panelSize || 'small')))
 })
-
-// 点击快捷键框开始录制
-shortcutBox.addEventListener('click', startRecording)
-shortcutBox.addEventListener('focus', startRecording)
-
-shortcutBox.addEventListener('blur', () => {
-  if (isRecording) stopRecording()
-})
-
-shortcutBox.addEventListener('keydown', (e) => {
-  if (!isRecording) return
-  e.preventDefault()
-  e.stopPropagation()
-
-  // 忽略单独按下修饰键
-  if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return
-
-  const shortcut = {
-    key: e.code,
-    ctrl: e.ctrlKey,
-    meta: e.metaKey,
-    shift: e.shiftKey,
-    alt: e.altKey
-  }
-
-  // 必须有修饰键
-  if (!shortcut.ctrl && !shortcut.meta && !shortcut.alt && !shortcut.shift) {
-    showMsg('必须包含至少一个修饰键（⌘ / ⌃ / ⌥ / ⇧）', 'hint')
-    return
-  }
-
-  currentShortcut = shortcut
-  setDisplay(shortcut)
-  stopRecording()
-
-  // 冲突检测
-  const conflict = findConflict(shortcut)
-  if (conflict) {
-    shortcutBox.classList.add('has-conflict')
-    showMsg(`与"${conflict}"冲突`, 'error')
-  } else {
-    shortcutBox.classList.remove('has-conflict')
-    showMsg('', 'hint')
-  }
-
-  renderExistingList()
-})
-
-// 清除按钮
-clearBtn.addEventListener('click', () => {
-  currentShortcut = null
-  isRecording = false
-  shortcutBox.classList.remove('recording', 'has-conflict')
-  shortcutDisplay.innerHTML = '<span class="placeholder">点击后按下快捷键...</span>'
-  showMsg('必须包含修饰键（⌘ / ⌃ / ⌥ / ⇧）', 'hint')
-  renderExistingList()
-})
-
-// 保存按钮
-saveBtn.addEventListener('click', () => {
-  if (currentShortcut && findConflict(currentShortcut)) {
-    showMsg('存在冲突，请重新设置', 'error')
-    return
-  }
-  chrome.storage.sync.set({ customShortcut: currentShortcut || null }, () => {
-    savedShortcut = currentShortcut
-    showMsg('已保存', 'success')
-    renderExistingList()
-  })
-})
-
-function startRecording() {
-  if (isRecording) return
-  isRecording = true
-  shortcutBox.classList.add('recording')
-  shortcutDisplay.textContent = '请按下快捷键组合...'
-  shortcutBox.focus()
-}
-
-function stopRecording() {
-  isRecording = false
-  shortcutBox.classList.remove('recording')
-}
-
-function setDisplay(shortcut) {
-  shortcutDisplay.className = ''
-  shortcutDisplay.textContent = formatShortcut(shortcut)
-}
+sizeBtns.forEach(btn => btn.addEventListener('click', () => {
+  sizeBtns.forEach(item => item.classList.toggle('active', item === btn))
+  chrome.storage.sync.set({ panelSize: btn.dataset.size })
+}))
+const devModeToggle = document.getElementById('devModeToggle')
+chrome.storage.sync.get(['devMode'], result => { devModeToggle.checked = !!result.devMode })
+devModeToggle.addEventListener('change', () => chrome.storage.sync.set({ devMode: devModeToggle.checked }))
 
 function formatShortcut(shortcut) {
   if (!shortcut) return ''
@@ -195,26 +170,20 @@ function keyCodeLabel(code) {
 // 格式示例："Ctrl+Shift+S"、"MacCtrl+S"
 function parseCommandShortcut(str) {
   if (!str) return null
+  // macOS 的 getAll() 返回 ⌥⇧S 等显示字符串。
+  str = str.replace(/⌃/g, 'MacCtrl+').replace(/⌥/g, 'Alt+')
+    .replace(/⇧/g, 'Shift+').replace(/⌘/g, 'Command+')
   const parts = str.split('+')
   const key = parts[parts.length - 1]
   const mods = parts.slice(0, -1).map(p => p.toLowerCase())
   return {
-    key: 'Key' + key.toUpperCase(),  // 尝试映射到 KeyCode 格式
+    key: /^[a-z]$/i.test(key) ? 'Key' + key.toUpperCase()
+      : /^\d$/.test(key) ? 'Digit' + key : key,
     ctrl: mods.includes('ctrl') || mods.includes('macctrl'),
     meta: mods.includes('command') || mods.includes('meta'),
     shift: mods.includes('shift'),
     alt: mods.includes('alt')
   }
-}
-
-// 检测冲突：与自定义快捷键本身（如果是编辑状态且 savedShortcut 不同则不算）及内置命令对比
-function findConflict(shortcut) {
-  for (const item of builtinShortcuts) {
-    if (shortcutsEqual(item.shortcut, shortcut)) {
-      return item.label
-    }
-  }
-  return null
 }
 
 function shortcutsEqual(a, b) {
@@ -226,42 +195,26 @@ function shortcutsEqual(a, b) {
     a.alt === b.alt
 }
 
-function showMsg(text, type) {
-  msgEl.textContent = text
-  msgEl.className = 'msg'
-  if (type === 'error') msgEl.classList.add('msg-error')
-  else if (type === 'success') msgEl.classList.add('msg-success')
-  else msgEl.classList.add('msg-hint')
-}
-
-// 渲染已注册快捷键列表
-function renderExistingList() {
-  const items = []
-
-  // 内置命令
-  builtinShortcuts.forEach(item => {
-    const isConflict = currentShortcut && shortcutsEqual(item.shortcut, currentShortcut)
-    items.push({
-      label: item.label,
-      display: formatShortcut(item.shortcut),
-      conflict: isConflict
-    })
+const languageSelect = document.getElementById('languageSelect')
+function refreshLanguage() {
+  PinpointI18n.render()
+  languageSelect.value = PinpointI18n.language
+  editors[0].label = PinpointI18n.t('截图并复制')
+  editors[1].label = PinpointI18n.t('自定义切换快捷键')
+  chrome.commands.getAll().then(commands => {
+    builtinShortcuts = commands.filter(command => command.shortcut).map(command => ({
+      label: command.name === 'toggle-selector' ? PinpointI18n.t('开启/关闭元素选择器') : command.description || command.name,
+      shortcut: parseCommandShortcut(command.shortcut)
+    }))
+    renderExistingList()
   })
-
-  // 自定义快捷键（已保存的）
-  const customDisplay = savedShortcut ? formatShortcut(savedShortcut) : null
-  const customConflict = savedShortcut && currentShortcut && !shortcutsEqual(savedShortcut, currentShortcut) && shortcutsEqual(savedShortcut, currentShortcut)
-  items.push({
-    label: '自定义切换快捷键',
-    display: customDisplay,
-    isCustom: true,
-    conflict: false
-  })
-
-  existingList.innerHTML = items.map(item => `
-    <div class="existing-item" style="${item.conflict ? 'color:#ef4444' : ''}">
-      <span>${item.label}</span>
-      <span class="key-tag ${item.display ? '' : 'empty'}">${item.display || '未设置'}</span>
-    </div>
-  `).join('')
+  editors.forEach(editor => { if (!editor.recording) renderShortcut(editor); showMessage(editor, '') })
 }
+languageSelect.addEventListener('change', async () => {
+  const error = document.getElementById('languageError')
+  error.hidden = true
+  try { await chrome.storage.sync.set({ language: languageSelect.value }) }
+  catch { languageSelect.value = PinpointI18n.language; error.hidden = false; error.textContent = PinpointI18n.t('语言设置失败，请重试') }
+})
+PinpointI18n.ready.then(refreshLanguage)
+PinpointI18n.onChange(refreshLanguage)

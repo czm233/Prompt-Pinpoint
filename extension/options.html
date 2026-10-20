@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>ElementSelector - 选项设置</title>
+  <title data-i18n="Prompt-Pinpoint - 选项设置">Prompt-Pinpoint — Options</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -12,8 +12,7 @@
       padding: 40px 20px;
     }
     .container { max-width: 520px; margin: 0 auto; }
-    h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; color: #0f172a; }
-    .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 28px; color: #0f172a; }
     .card {
       background: white;
       border-radius: 12px;
@@ -114,24 +113,43 @@
 </head>
 <body>
   <div class="container">
-    <h1>ElementSelector 设置</h1>
-    <p class="subtitle">Chrome 扩展选项</p>
+    <h1><span data-i18n="Prompt-Pinpoint 设置">Prompt-Pinpoint Settings</span></h1>
 
     <div class="card">
-      <div class="card-title">自定义切换快捷键</div>
-      <div class="card-desc">按下后切换元素选择器开/关，效果等同于点击扩展图标</div>
+      <div class="row" style="justify-content: space-between;">
+        <label class="card-title" for="languageSelect" data-i18n="语言">Language</label>
+        <select id="languageSelect" class="btn btn-clear" aria-label="Language">
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
+      </div>
+      <div id="languageError" class="msg msg-error" role="alert" hidden></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size: 15px; margin-bottom: 20px;"><span data-i18n="快捷键设置">Keyboard shortcuts</span></h2>
+      <div class="card-title"><span data-i18n="截图并复制">Capture and copy</span></div>
+      <div class="row" style="margin-top: 12px;">
+        <div class="shortcut-box" id="screenshotShortcutBox" tabindex="0" role="button" aria-label="Record screenshot shortcut" data-i18n-aria-label="录制截图快捷键">
+          <span id="screenshotShortcutDisplay" class="placeholder"><span data-i18n="点击后按下快捷键...">Click and press a shortcut…</span></span>
+        </div>
+        <button class="btn btn-clear" id="screenshotClearBtn"><span data-i18n="清除">Clear</span></button>
+        <button class="btn btn-save" id="screenshotSaveBtn"><span data-i18n="保存">Save</span></button>
+      </div>
+      <div class="msg msg-hint" id="screenshotMsg" aria-live="polite"></div>
+      <div class="card-title" style="margin-top: 16px; margin-bottom: 12px;"><span data-i18n="开启/关闭元素选择器">Toggle element selector</span></div>
 
       <div class="row">
         <div class="shortcut-box" id="shortcutBox" tabindex="0">
-          <span id="shortcutDisplay" class="placeholder">点击后按下快捷键...</span>
+          <span id="shortcutDisplay" class="placeholder"><span data-i18n="点击后按下快捷键...">Click and press a shortcut…</span></span>
         </div>
-        <button class="btn btn-clear" id="clearBtn">清除</button>
-        <button class="btn btn-save" id="saveBtn">保存</button>
+        <button class="btn btn-clear" id="clearBtn"><span data-i18n="清除">Clear</span></button>
+        <button class="btn btn-save" id="saveBtn"><span data-i18n="保存">Save</span></button>
       </div>
-      <div class="msg msg-hint" id="msgEl">必须包含修饰键（⌘ / ⌃ / ⌥ / ⇧）</div>
+      <div class="msg msg-hint" id="msgEl"><span data-i18n="必须包含修饰键（⌘ / ⌃ / ⌥ / ⇧）">Include a modifier key (⌘ / ⌃ / ⌥ / ⇧)</span></div>
 
       <div class="existing-list">
-        <div class="existing-title">已注册的快捷键</div>
+        <div class="existing-title"><span data-i18n="已注册的快捷键">Assigned shortcuts</span></div>
         <div id="existingList"></div>
       </div>
     </div>
@@ -139,8 +157,8 @@
     <div class="card">
       <div class="row" style="justify-content: space-between;">
         <div>
-          <div class="card-title">开发者模式</div>
-          <div class="card-desc" style="margin-bottom: 0;">允许选中插件自身的面板元素</div>
+          <div class="card-title"><span data-i18n="开发者模式">Developer mode</span></div>
+          <div class="card-desc" style="margin-bottom: 0;"><span data-i18n="允许选中插件自身的面板元素">Allow selecting the extension panel</span></div>
         </div>
         <label class="switch">
           <input type="checkbox" id="devModeToggle">
@@ -150,16 +168,17 @@
     </div>
 
     <div class="card">
-      <div class="card-title">面板尺寸</div>
-      <div class="card-desc">选择面板的显示大小</div>
+      <div class="card-title"><span data-i18n="面板尺寸">Panel size</span></div>
+      <div class="card-desc"><span data-i18n="选择面板的显示大小">Choose the panel size</span></div>
       <div class="size-selector" id="sizeSelector">
-        <button class="size-btn active" data-size="small">小<br><span class="size-hint">紧凑</span></button>
-        <button class="size-btn" data-size="medium">中<br><span class="size-hint">适中</span></button>
-        <button class="size-btn" data-size="large">大<br><span class="size-hint">宽敞</span></button>
+        <button class="size-btn active" data-size="small"><span data-i18n="小">Small</span><br><span class="size-hint"><span data-i18n="紧凑">Compact</span></span></button>
+        <button class="size-btn" data-size="medium"><span data-i18n="中">Medium</span><br><span class="size-hint"><span data-i18n="适中">Standard</span></span></button>
+        <button class="size-btn" data-size="large"><span data-i18n="大">Large</span><br><span class="size-hint"><span data-i18n="宽敞">Spacious</span></span></button>
       </div>
     </div>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

@@ -10,6 +10,8 @@ const selectedCount = document.getElementById('selected-count')
 
 // 初始化
 async function init() {
+  await PinpointI18n.ready
+  PinpointI18n.render()
   // 获取当前标签页的选择器状态
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
 
@@ -20,22 +22,17 @@ async function init() {
 
   updateUI(result[`active_${tab.id}`] || false, result[`count_${tab.id}`] || 0)
 
-  // 监听来自 content script 的消息
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'STATE_CHANGED') {
-      updateUI(message.isActive, message.count)
-    }
-  })
+
 }
 
 // 更新 UI
 function updateUI(isActive, count) {
   // 更新状态文本
-  statusText.textContent = isActive ? '运行中' : '未启动'
+  statusText.textContent = isActive ? PinpointI18n.t('运行中') : PinpointI18n.t('未启动')
   statusText.className = `status-text ${isActive ? 'active' : ''}`
 
   // 更新选中数量
-  selectedCount.textContent = `${count} 个元素`
+  selectedCount.textContent = `${count}${PinpointI18n.t(' 个元素')}`
 
   // 更新按钮
   const btnIcon = toggleBtn.querySelector('.btn-icon')
@@ -43,11 +40,11 @@ function updateUI(isActive, count) {
 
   if (isActive) {
     btnIcon.textContent = '⏹'
-    btnText.textContent = '停止选择器'
+    btnText.textContent = PinpointI18n.t('停止选择器')
     toggleBtn.classList.add('active')
   } else {
     btnIcon.textContent = '▶'
-    btnText.textContent = '启动选择器'
+    btnText.textContent = PinpointI18n.t('启动选择器')
     toggleBtn.classList.remove('active')
   }
 }
@@ -68,5 +65,14 @@ async function toggleSelector() {
 // 事件绑定
 toggleBtn.addEventListener('click', toggleSelector)
 
+  // 监听来自 content script 的消息
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'STATE_CHANGED') {
+      updateUI(message.isActive, message.count)
+    }
+  })
+
 // 启动
 init()
+
+PinpointI18n.onChange(() => { PinpointI18n.render(); init() })

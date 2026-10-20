@@ -1,54 +1,53 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ElementSelector</title>
+  <title>Prompt-Pinpoint</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="popup-container">
     <header class="header">
       <span class="logo">🎯</span>
-      <h1 class="title">ElementSelector</h1>
+      <h1 class="title">Prompt-Pinpoint</h1>
     </header>
 
     <main class="main">
       <div class="status-bar">
-        <span class="status-label">状态：</span>
-        <span id="status-text" class="status-text">未启动</span>
+        <span class="status-label"><span data-i18n="状态：">Status:</span></span>
+        <span id="status-text" class="status-text"><span data-i18n="未启动">Inactive</span></span>
       </div>
 
       <div class="selected-info">
-        <span class="info-label">已选中：</span>
-        <span id="selected-count" class="info-value">0 个元素</span>
+        <span class="info-label"><span data-i18n="已选中：">Selected:</span></span>
+        <span id="selected-count" class="info-value"><span data-i18n="0 个元素">0 elements</span></span>
       </div>
 
       <button id="toggle-btn" class="toggle-btn">
         <span class="btn-icon">▶</span>
-        <span class="btn-text">启动选择器</span>
+        <span class="btn-text"><span data-i18n="启动选择器">Start selector</span></span>
       </button>
 
       <div class="shortcuts">
-        <div class="shortcut-title">快捷键</div>
+        <div class="shortcut-title"><span data-i18n="快捷键">Shortcuts</span></div>
         <div class="shortcut-item">
           <kbd>Alt</kbd> + <kbd>S</kbd>
-          <span class="shortcut-desc">开启/关闭</span>
+          <span class="shortcut-desc"><span data-i18n="开启/关闭">Toggle</span></span>
         </div>
         <div class="shortcut-item">
           <kbd>ESC</kbd>
-          <span class="shortcut-desc">关闭选择器</span>
+          <span class="shortcut-desc"><span data-i18n="关闭选择器">Close selector</span></span>
         </div>
       </div>
     </main>
 
     <footer class="footer">
-      <a href="https://github.com" target="_blank" class="footer-link">
-        使用说明
-      </a>
+      <a href="https://github.com" target="_blank" class="footer-link"><span data-i18n="使用说明">Help</span></a>
     </footer>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -251,9 +251,9 @@
     const vh = window.innerHeight
     const centerX = rect.left + rect.width / 2
     const centerY = rect.top + rect.height / 2
-    const posY = centerY < vh / 3 ? '顶部' : centerY < vh * 2 / 3 ? '中部' : '底部'
-    const posX = centerX < vw / 3 ? '偏左' : centerX < vw * 2 / 3 ? '居中' : '偏右'
-    info.position = '页面' + posY + posX
+    const posY = centerY < vh / 3 ? PinpointI18n.t('顶部') : centerY < vh * 2 / 3 ? PinpointI18n.t('中部') : PinpointI18n.t('底部')
+    const posX = centerX < vw / 3 ? PinpointI18n.t('偏左') : centerX < vw * 2 / 3 ? PinpointI18n.t('居中') : PinpointI18n.t('偏右')
+    info.position = PinpointI18n.t('页面') + posY + posX
 
     // 层级上下文（最近的语义化祖先）
     const semanticTags = ['form', 'nav', 'header', 'footer', 'main', 'aside', 'section', 'article', 'dialog']
@@ -269,7 +269,7 @@
           if (cls) ctx += '.' + cls
         }
         ctx += '>'
-        info.context = ctx + ' 内'
+        info.context = ctx + PinpointI18n.t(' 内')
         break
       }
       parent = parent.parentElement
@@ -285,7 +285,7 @@
     const lines = []
 
     // 标题行
-    let title = '[元素 ' + id + '] <' + info.tagName
+    let title = PinpointI18n.t('[元素 ') + id + '] <' + info.tagName
     const typeAttr = info.attrs.find(function(a) { return a.startsWith('type=') })
     if (typeAttr) title += ' ' + typeAttr
     title += '>'
@@ -293,7 +293,7 @@
     lines.push(title)
 
     // 选择器
-    lines.push('  选择器: ' + info.selector)
+    lines.push(PinpointI18n.t('  选择器: ') + info.selector)
 
     // iframe 内的选择器需要先定位 frame，再在 frame 文档内查询
     if (info.frame) {
@@ -302,21 +302,21 @@
 
     // 属性
     if (info.attrs.length > 0) {
-      lines.push('  属性: ' + info.attrs.join(' | '))
+      lines.push(PinpointI18n.t('  属性: ') + info.attrs.join(' | '))
     }
 
     // 关联标签
     if (info.label) {
-      lines.push('  关联标签: "' + info.label + '"')
+      lines.push(PinpointI18n.t('  关联标签: "') + info.label + '"')
     }
 
     // 状态
     if (info.states.length > 0) {
-      lines.push('  状态: ' + info.states.join(' | '))
+      lines.push(PinpointI18n.t('  状态: ') + info.states.join(' | '))
     }
 
     // 位置
-    let posLine = '  位置: ' + info.position + ' (' + info.size + ')'
+    let posLine = PinpointI18n.t('  位置: ') + info.position + ' (' + info.size + ')'
     if (info.coords) {
       posLine += ' @(' + info.coords.x + ', ' + info.coords.y + ')'
     }
@@ -324,7 +324,7 @@
 
     // 上下文
     if (info.context) {
-      lines.push('  上下文: ' + info.context)
+      lines.push(PinpointI18n.t('  上下文: ') + info.context)
     }
 
     return lines.join('\n')
@@ -695,7 +695,7 @@
         pointerEvents: 'none',
         zIndex: '0'
       })
-      placeholderDiv.innerHTML = 'prompt编写区域<br>将prompt写在这里<br>点击复制会一起复制到剪切板'
+      placeholderDiv.innerHTML = PinpointI18n.t('prompt编写区域<br>将prompt写在这里<br>点击复制会一起复制到剪切板')
 
       const togglePlaceholder = () => {
         placeholderDiv.style.display = promptInput.value ? 'none' : 'flex'
@@ -731,7 +731,7 @@
         cursor: 'pointer',
         flexShrink: '0',
         transition: 'background 0.15s ease'
-      }, { id: 'es-copy-bar', textContent: '复制' })
+      }, { id: 'es-copy-bar', textContent: PinpointI18n.t('复制') })
       copyBar.addEventListener('mouseenter', () => {
         if (!copyBar._isFeedback) copyBar.style.background = '#2563eb'
       })
@@ -752,8 +752,8 @@
       if (this._selectedElements.length === 0) {
         content.innerHTML =
           '<div style="color: #b0b0b0; font-size: ' + sc.hintFontSize + '; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; line-height: 1.6;">' +
-            '<span>Cmd+点击 临时恢复交互</span>' +
-            '<span>⏸ 长期恢复交互</span>' +
+            PinpointI18n.t('<span>Cmd+点击 临时恢复交互</span>') +
+            PinpointI18n.t('<span>⏸ 长期恢复交互</span>') +
           '</div>'
         return
       }
@@ -797,7 +797,7 @@
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap'
-          }, { textContent: (isCurrentPage ? '📍 当前页面: ' : '🔗 ') + url, title: url })
+          }, { textContent: (isCurrentPage ? PinpointI18n.t('📍 当前页面: ') : '🔗 ') + url, title: url })
           content.appendChild(urlLabel)
         }
 
@@ -852,7 +852,7 @@
             cursor: 'pointer',
             color: '#94a3b8',
             transition: 'color 0.15s ease, background 0.15s ease'
-          }, { title: '复制' })
+          }, { title: PinpointI18n.t('复制') })
           copyBtn.innerHTML = self._icons.copyAll
           // 动态设置小按钮中 SVG 图标尺寸（使用较小的尺寸）
           const copySvg = copyBtn.querySelector('svg')
@@ -880,7 +880,7 @@
             cursor: 'pointer',
             color: '#94a3b8',
             transition: 'color 0.15s ease, background 0.15s ease'
-          }, { title: '删除' })
+          }, { title: PinpointI18n.t('删除') })
           deleteBtn.innerHTML = self._icons.clear
           // 动态设置小按钮中 SVG 图标尺寸
           const deleteSvg = deleteBtn.querySelector('svg')
@@ -939,29 +939,29 @@
       }
 
       // 清除按钮（始终显示）
-      const clearBtn = this._createIconButton('clear', hasMultiplePages ? '清除本页' : '清除选择', () => self._clearSelection())
+      const clearBtn = this._createIconButton('clear', hasMultiplePages ? PinpointI18n.t('清除本页') : PinpointI18n.t('清除选择'), () => self._clearSelection())
       appendButton(clearBtn)
 
       // 清除所有按钮（多页面时显示）
       if (hasMultiplePages) {
-        const clearAllBtn = this._createIconButton('clearAll', '清除所有', () => self._clearAllSelections())
+        const clearAllBtn = this._createIconButton('clearAll', PinpointI18n.t('清除所有'), () => self._clearAllSelections())
         appendButton(clearAllBtn)
       }
 
       // 历史记录按钮
-      const historyBtn = this._createIconButton('history', '复制历史', () => self._toggleHistoryOverlay())
+      const historyBtn = this._createIconButton('history', PinpointI18n.t('复制历史'), () => self._toggleHistoryOverlay())
       appendButton(historyBtn)
 
       // 暂停/继续按钮
       const pauseBtn = this._createIconButton(
         this._isPaused ? 'resume' : 'pause',
-        this._isPaused ? '继续选择' : '暂停选择',
+        this._isPaused ? PinpointI18n.t('继续选择') : PinpointI18n.t('暂停选择'),
         () => self._togglePause()
       )
       appendButton(pauseBtn)
 
       // 关闭按钮
-      const closeBtn = this._createIconButton('close', '关闭', () => self._broadcastCommand('STOP'))
+      const closeBtn = this._createIconButton('close', PinpointI18n.t('关闭'), () => self._broadcastCommand('STOP'))
       appendButton(closeBtn)
 
       // 更新选择信息
@@ -978,9 +978,9 @@
       const urls = new Set(this._selectedElements.map(el => el.url))
       infoEl.textContent = String(Math.min(count, 99))
 
-      let title = '已选择 ' + count + ' 个元素'
-      if (urls.size > 1) title += '（' + urls.size + ' 个页面）'
-      if (this._isPaused) title += ' | 已暂停'
+      let title = PinpointI18n.t('已选择 ') + count + PinpointI18n.t(' 个元素')
+      if (urls.size > 1) title += PinpointI18n.t('（') + urls.size + PinpointI18n.t(' 个页面）')
+      if (this._isPaused) title += PinpointI18n.t(' | 已暂停')
       infoEl.title = title
     },
 
@@ -1024,6 +1024,7 @@
         }
 
         const target = e.target
+        if (target.closest?.('[data-pinpoint-screenshot-feedback]')) return
         const isPanel = target.closest && target.closest('[data-element-selector-panel]')
 
         // 开发者模式：仅捕获面板自身元素
@@ -1043,6 +1044,7 @@
         if (self._wasDragging) { self._wasDragging = false; return }
 
         const target = e.target
+        if (target.closest?.('[data-pinpoint-screenshot-feedback]')) return
         const isPanel = target.closest && target.closest('[data-element-selector-panel]')
 
         // 开发者模式：仅捕获面板自身元素
@@ -1465,11 +1467,11 @@
         text += prompt + '\n\n'
       }
       if (el.url && !self._devMode) {
-        text += '页面: ' + el.url + '\n'
+        text += PinpointI18n.t('页面: ') + el.url + '\n'
       }
       text += formatElementInfo(el.info, el.id)
       navigator.clipboard.writeText(text).then(() => {
-        self._showCopyFeedback('已复制！')
+        self._showCopyFeedback(PinpointI18n.t('已复制！'))
         self._saveToHistory(text)
       })
     },
@@ -1507,7 +1509,7 @@
         if (index > 0) text += '\n'
         // 开发者模式不带 URL
         if (!self._devMode) {
-          text += '页面: ' + url + '\n'
+          text += PinpointI18n.t('页面: ') + url + '\n'
         }
         const elements = grouped[url]
         text += elements.map((el) => {
@@ -1517,7 +1519,7 @@
       })
 
       navigator.clipboard.writeText(text.trimEnd()).then(() => {
-        self._showCopyFeedback('已复制所有选择器！')
+        self._showCopyFeedback(PinpointI18n.t('已复制所有选择器！'))
         self._saveToHistory(text.trimEnd())
       })
     },
@@ -1526,11 +1528,11 @@
       const copyBar = this._panel ? this._panel.querySelector('#es-copy-bar') : null
       if (copyBar) {
         copyBar._isFeedback = true
-        copyBar.textContent = '复制成功'
+        copyBar.textContent = PinpointI18n.t('复制成功')
         copyBar.style.background = 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
         setTimeout(() => {
           copyBar._isFeedback = false
-          copyBar.textContent = '复制'
+          copyBar.textContent = PinpointI18n.t('复制')
           copyBar.style.background = '#3b82f6'
         }, 1500)
       }
@@ -1766,13 +1768,13 @@
     _formatRelativeTime(timestamp) {
       const diff = Date.now() - timestamp
       const seconds = Math.floor(diff / 1000)
-      if (seconds < 60) return '刚刚'
+      if (seconds < 60) return PinpointI18n.t('刚刚')
       const minutes = Math.floor(seconds / 60)
-      if (minutes < 60) return minutes + ' 分钟前'
+      if (minutes < 60) return minutes + PinpointI18n.t(' 分钟前')
       const hours = Math.floor(minutes / 60)
-      if (hours < 24) return hours + ' 小时前'
+      if (hours < 24) return hours + PinpointI18n.t(' 小时前')
       const days = Math.floor(hours / 24)
-      return days + ' 天前'
+      return days + PinpointI18n.t(' 天前')
     },
 
     /**
@@ -1822,11 +1824,11 @@
         flex: '1',
         fontSize: sc.selectedInfoFontSize,
         fontWeight: '500'
-      }, { textContent: '复制历史' })
+      }, { textContent: PinpointI18n.t('复制历史') })
       header.appendChild(title)
 
       // 关闭浮层按钮
-      const closeBtn = this._createIconButton('close', '关闭历史', () => self._hideHistoryOverlay())
+      const closeBtn = this._createIconButton('close', PinpointI18n.t('关闭历史'), () => self._hideHistoryOverlay())
       header.appendChild(closeBtn)
       overlay.appendChild(header)
 
@@ -1842,7 +1844,7 @@
         const history = result.copyHistory || []
         if (history.length === 0) {
           listContainer.innerHTML =
-            '<div style="color: #666; font-size: ' + sc.hintFontSize + '; display: flex; align-items: center; justify-content: center; height: 100%;">暂无历史记录</div>'
+            '<div style="color: #666; font-size: ' + sc.hintFontSize + '; display: flex; align-items: center; justify-content: center; height: 100%;">' + PinpointI18n.t('暂无历史记录') + '</div>'
         } else {
           history.forEach((record, index) => {
             const item = createElement('div', {
@@ -1885,7 +1887,7 @@
             // 点击复制
             infoArea.onclick = () => {
               navigator.clipboard.writeText(record.content).then(() => {
-                summaryEl.textContent = '已复制!'
+                summaryEl.textContent = PinpointI18n.t('已复制!')
                 summaryEl.style.color = '#22c55e'
                 setTimeout(() => {
                   summaryEl.textContent = record.summary
@@ -1908,7 +1910,7 @@
               justifyContent: 'center',
               flexShrink: '0',
               transition: 'color 0.15s ease'
-            }, { title: '删除' })
+            }, { title: PinpointI18n.t('删除') })
             delBtn.innerHTML = self._icons.close
             const delSvg = delBtn.querySelector('svg')
             if (delSvg) {
@@ -2001,6 +2003,12 @@
     // 忽略错误（扩展可能已被重新加载）
   }
 
+  function refreshPanelLanguage() {
+    if (ElementSelector._panel) ElementSelector._applyPanelSize(ElementSelector._panelSize)
+  }
+  PinpointI18n.ready.then(refreshPanelLanguage)
+  PinpointI18n.onChange(refreshPanelLanguage)
+
   // 挂载到全局（用于防止重复加载检测）
   window.__ElementSelectorExtension = ElementSelector
 
@@ -2051,6 +2059,7 @@
     })
 
     document.addEventListener('keydown', (e) => {
+      if (!e.isTrusted || e.repeat || e.isComposing) return
       if (!_customShortcut) return
       if (_matchesShortcut(e, _customShortcut)) {
         e.preventDefault()

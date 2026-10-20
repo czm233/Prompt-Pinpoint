@@ -31,9 +31,14 @@ jobs:
           fi
 
           node --check extension/background.js
+          node --check extension/i18n.js
+          node --check extension/clipboard.js
+          node --check extension/screenshot-feedback.js
+          node --check extension/screenshot-shortcut.js
           node --check extension/content.js
           node --check extension/options.js
           node --check extension/popup.js
+          node --test tests/*.test.cjs
 
       - name: Build release package
         shell: bash
@@ -45,7 +50,9 @@ jobs:
 
           mkdir -p "${package_dir}/icons"
           cp extension/manifest.json "${package_dir}/"
-          cp extension/background.js "${package_dir}/"
+          cp extension/background.js extension/i18n.js "${package_dir}/"
+          cp extension/screenshot-feedback.js extension/screenshot-shortcut.js "${package_dir}/"
+          cp extension/clipboard.html extension/clipboard.js "${package_dir}/"
           cp extension/content.js "${package_dir}/"
           cp extension/options.html "${package_dir}/"
           cp extension/options.js "${package_dir}/"

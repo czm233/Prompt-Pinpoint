@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
   if (message.type === 'TOGGLE_SELECTOR') {
-    toggleSelector(message.tabId)
+    toggleSelector(message.tabId || sender.tab?.id)
     sendResponse({ success: true })
     return true
   }
@@ -47,9 +47,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       count: message.count
     })
 
-    // 保存到 storage
+    // 保存到 storage。全局开关 elementSelectorActive 只在用户点图标时改，
+    // 页面自己开关（面板上的关闭按钮 / ESC）只影响当前标签页。
     chrome.storage.local.set({
-      elementSelectorActive: message.isActive,
       [`active_${sender.tab.id}`]: message.isActive,
       [`count_${sender.tab.id}`]: message.count
     })
@@ -222,32 +222,92 @@ async function broadcastToAllFrames(tabId, message) {
   }
 }
 
-// 切换选择器
+// 切换选择器：先问页面上的面板到底在不在，再决定开还是关。
+// 面板在 -> 关闭整个选择模式（所有页面一起关）；面板不在 -> 打开模式并重建当前页面。
 async function toggleSelector(tabId) {
   try {
-    // 先尝试注入 content script（如果还没有注入的话）
     await ensureContentScriptInjected(tabId)
 
-    // 直接发送到所有 frame。不要只发给顶层 frame，否则 iframe 中的选择器不会启动。
-    await broadcastToAllFrames(tabId, { type: 'TOGGLE' })
+    let state = await queryPageState(tabId)
+    if (!state) {
+      // 页面里还留着失效的旧实例（监听器已死，注入被重复加载保护挡掉），清掉后重来。
+      await resetStalePageScript(tabId)
+      await ensureContentScriptInjected(tabId)
+      state = await queryPageState(tabId)
+    }
+    if (!state) throw new Error('content script 未能响应')
+
+    if (state.panel) {
+      await setSelectorMode(false)
+      await broadcastToAllFrames(tabId, { type: 'STOP' })
+    } else {
+      await setSelectorMode(true)
+      await broadcastToAllFrames(tabId, { type: 'START' })
+    }
   } catch (error) {
     console.error('切换选择器失败:', error)
+    flashErrorBadge(tabId)
   }
 }
 
-// 确保 content script 已注入
+async function setSelectorMode(enabled) {
+  await chrome.storage.local.set({ elementSelectorActive: enabled })
+}
+
+async function queryPageState(tabId) {
+  if (!tabId) return null
+  try {
+    // 旧版本 content script 对未知消息只返回 true 不响应，必须加超时，否则会一直挂着。
+    const state = await Promise.race([
+      chrome.tabs.sendMessage(tabId, { type: 'GET_STATE' }, { frameId: 0 }),
+      new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
+    ])
+    return state && typeof state === 'object' ? state : null
+  } catch (error) {
+    return null
+  }
+}
+
+async function resetStalePageScript(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId, frameIds: [0] },
+    func: () => {
+      try { delete window.__ElementSelectorExtension } catch (e) {}
+      document.querySelectorAll('[data-element-selector-panel]').forEach(node => node.remove())
+      if (document.body) document.body.style.cursor = ''
+    }
+  }).catch(() => {})
+}
+
+function flashErrorBadge(tabId) {
+  chrome.action.setBadgeText({ tabId, text: '!' }).catch(() => {})
+  chrome.action.setBadgeBackgroundColor({ tabId, color: '#dc2626' }).catch(() => {})
+  setTimeout(() => chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {}), 4000)
+}
+
+// 确保 content script 已注入。某些 frame（沙箱 iframe、受限页面）永远注入不了，
+// 不能因为一帧失败就让整次点击失效，所以失败后按帧重试，只要求顶层帧成功。
 async function ensureContentScriptInjected(tabId) {
   try {
-    // 对所有 frame 注入；content.js 自带重复加载保护。
-    // 这样扩展更新前已经打开的页面，其跨域 iframe 也能立即获得选择能力。
     await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
       files: ['i18n.js', 'content.js']
     })
+    return
   } catch (error) {
-    // 页面可能不允许脚本注入（例如 chrome:// 页面），交给调用方处理。
-    throw error
+    // 退化为逐帧注入
   }
+  const frames = await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)
+  const frameIds = (frames || []).map(frame => frame.frameId)
+  if (!frameIds.includes(0)) frameIds.unshift(0)
+  const results = await Promise.allSettled(frameIds.map(frameId =>
+    chrome.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      files: ['i18n.js', 'content.js']
+    })
+  ))
+  const topResult = results[frameIds.indexOf(0)]
+  if (!topResult || topResult.status !== 'fulfilled') throw new Error('顶层页面注入失败')
 }
 
 // 标签页关闭时清理状态

@@ -407,14 +407,25 @@
      * 启动选择器
      */
     start() {
-      if (this._isActive) return
+      if (this._isActive) {
+        // 状态说“开着”但面板已经被页面清掉时不能直接返回，否则会一直卡在无面板状态。
+        if (this._container && this._container.isConnected && this._container.contains(this._panel)) return
+        this.stop()
+      }
       // 每次打开都是一次新的选择会话；复制历史使用独立 storage.local，不受影响。
       this._resetState()
       this._isActive = true
       this._isPaused = false
-      this._createUI()
-      this._bindEvents()
-      document.body.style.cursor = 'crosshair'
+      try {
+        this._createUI()
+        this._bindEvents()
+        if (document.body) document.body.style.cursor = 'crosshair'
+      } catch (error) {
+        // 建面板失败时把状态复位，避免留下“记着开着却没有面板”的僵尸态。
+        this._isActive = false
+        try { this._removeUI() } catch (e) {}
+        throw error
+      }
       this._notifyStateChange()
       console.log('ElementSelector 已启动')
     },
@@ -429,7 +440,7 @@
       this._unbindEvents()
       this._removeUI()
       this._resetState()
-      document.body.style.cursor = ''
+      if (document.body) document.body.style.cursor = ''
       this._notifyStateChange()
       console.log('ElementSelector 已停止')
     },
@@ -439,10 +450,13 @@
      */
     toggle() {
       if (this._isActive) {
+        const panelAlive = !!(this._container && this._container.isConnected &&
+          this._panel && this._container.contains(this._panel))
         this.stop()
-      } else {
-        this.start()
+        // 面板本来就不在 = 状态残留，直接重建，而不是“关掉一个看不见的面板”。
+        if (panelAlive) return
       }
+      this.start()
     },
 
     /**
@@ -2009,8 +2023,20 @@
       } else if (message.type === 'PING') {
         // 响应 PING，表示 content script 已加载
         sendResponse({ success: true, loaded: true })
+      } else if (message.type === 'GET_STATE') {
+        // 后台据此判断这一页的面板是否真的还在，避免“记着开着却没有面板”。
+        const container = ElementSelector._container
+        const panelAlive = !!(container && container.isConnected &&
+          ElementSelector._panel && container.contains(ElementSelector._panel))
+        sendResponse({
+          success: true,
+          active: ElementSelector._isActive,
+          panel: panelAlive
+        })
       }
-      return true
+      // 已经同步 sendResponse 过，这里返回 false 即可；返回 true 会让未识别的消息
+      // 一直占着通道，后台等不到回应。
+      return false
     })
   } catch (e) {
     // 忽略错误（扩展可能已被重新加载）
@@ -2077,7 +2103,8 @@
       if (_matchesShortcut(e, _customShortcut)) {
         e.preventDefault()
         e.stopPropagation()
-        ElementSelector._broadcastCommand('TOGGLE')
+        // 与点击工具栏图标一致：全局开关选择模式。
+        chrome.runtime.sendMessage({ type: 'TOGGLE_SELECTOR' }).catch(() => {})
       }
     }, true)
   } catch (e) {

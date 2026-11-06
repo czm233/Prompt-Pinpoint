@@ -1041,6 +1041,9 @@
 
       this._handleClick = (e) => {
         if (!self._isActive) return
+        // Disabled native controls suppress click in Chrome, but still emit
+        // pointerdown. Ignore any later click from their descendants.
+        if (e.type === 'click' && e.target.closest?.(':disabled')) return
         if (self._wasDragging) { self._wasDragging = false; return }
 
         const target = e.target
@@ -1068,6 +1071,12 @@
         self._selectElement(target)
       }
 
+      this._handleDisabledPointerDown = (e) => {
+        if (e.button !== 0 || e.isPrimary === false) return
+        if (!e.target.closest?.(':disabled')) return
+        self._handleClick(e)
+      }
+
       this._handleKeyDown = (e) => {
         // 按下 Cmd 键时隐藏高亮框（避免 Cmd+Tab 等操作时干扰）
         if (e.key === 'Meta' && self._isActive) {
@@ -1089,6 +1098,7 @@
 
       document.addEventListener('mousemove', this._handleMouseMove, true)
       document.addEventListener('click', this._handleClick, true)
+      document.addEventListener('pointerdown', this._handleDisabledPointerDown, true)
       document.addEventListener('keydown', this._handleKeyDown, true)
       window.addEventListener('scroll', this._handleScroll, true)
       window.addEventListener('resize', this._handleResize)
@@ -1111,6 +1121,9 @@
       }
       if (this._handleClick) {
         document.removeEventListener('click', this._handleClick, true)
+      }
+      if (this._handleDisabledPointerDown) {
+        document.removeEventListener('pointerdown', this._handleDisabledPointerDown, true)
       }
       if (this._handleKeyDown) {
         document.removeEventListener('keydown', this._handleKeyDown, true)

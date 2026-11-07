@@ -54,10 +54,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       [`count_${sender.tab.id}`]: message.count
     })
   } else if (message.type === 'GET_FRAME_CONTEXT' && sender.tab) {
-    sendResponse({
+    // restoreActive：刷新前这一页确实开着（active_<tabId>），且全局模式没有被图标/快捷键整体关掉。
+    // 页面内关闭（面板按钮 / ESC）会把 active_<tabId> 置 false，刷新后即不再自动恢复。
+    const respond = (restoreActive) => sendResponse({
       frameId: sender.frameId || 0,
-      topUrl: sender.tab.url || message.frameUrl
+      topUrl: sender.tab.url || message.frameUrl,
+      restoreActive
     })
+    chrome.storage.local.get([`active_${sender.tab.id}`, 'elementSelectorActive'])
+      .then(result => respond(!!result[`active_${sender.tab.id}`] && !!result.elementSelectorActive))
+      .catch(() => respond(false))
   } else if (message.type === 'SELECTIONS_CHANGED' && sender.tab) {
     const data = message.data
     // 仅在当前打开期间向所有 frame 同步，不持久化当前选择。
@@ -320,7 +326,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'loading') {
     tabStates.delete(tabId)
-    chrome.storage.local.remove([`active_${tabId}`, `count_${tabId}`])
+    // active_<tabId> 必须保留：刷新后 content script 依据它判断是否恢复选择器
+    //（页面内关闭过的页刷新后保持关闭）。页面加载完成后 STATE_CHANGED 会上报真实状态覆盖它。
+    chrome.storage.local.remove(`count_${tabId}`)
   }
   // 页面加载完成后主动注入 content script，确保自定义快捷键立即生效
   // 即使 content_scripts 配置对当前页面未生效（如扩展更新前已打开的页面）也能正常工作

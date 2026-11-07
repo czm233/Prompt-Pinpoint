@@ -2052,11 +2052,13 @@
   window.__ElementSelectorExtension = ElementSelector
 
   // 获取 background 提供的稳定 frameId 和顶层页面 URL（跨域 frame 不能直接读取 window.top.location）。
+  // restoreActive 是本标签页刷新前的真实开关状态：页面内关闭过的标签页刷新后不再自动恢复。
   try {
     chrome.runtime.sendMessage({ type: 'GET_FRAME_CONTEXT', frameUrl: window.location.href }, (context) => {
       if (!context) return
       ElementSelector._frameId = context.frameId || 0
       ElementSelector._topUrl = context.topUrl || window.location.href
+      if (context.restoreActive && !ElementSelector._isActive) ElementSelector.start()
     })
   } catch (e) {}
 
@@ -2076,9 +2078,6 @@
       _customShortcut = result.customShortcut || null
       ElementSelector._devMode = !!result.devMode
       ElementSelector._panelSize = result.panelSize || 'small'
-    })
-    chrome.storage.local.get(['elementSelectorActive'], (result) => {
-      if (result.elementSelectorActive && !ElementSelector._isActive) ElementSelector.start()
     })
 
     chrome.storage.onChanged.addListener((changes) => {
